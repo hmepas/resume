@@ -80,7 +80,7 @@ func parseLoose(path string) resume.Session {
 	session.Agent = "pi"
 	session.ID = sessionIDFromPath(path)
 	session.SourcePath = path
-	session.ResumeHint = "pi"
+	session.ResumeHint = "pi --session " + session.ID
 	session.Confidence = "low"
 	return session
 }

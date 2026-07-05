@@ -1,4 +1,5 @@
 .gocache/
+.gomodcache/
 /resume
 /dist/
 /.tmp/

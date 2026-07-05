@@ -37,7 +37,11 @@ func ForSession(session resume.Session) (Command, error) {
 	case "opencode":
 		return Command{Name: "opencode", Dir: dir}, nil
 	case "pi":
-		return Command{Name: "pi", Dir: dir}, nil
+		id := session.ID
+		if id == "" || id == session.ResumeHint {
+			return Command{}, fmt.Errorf("pi session has no resume id")
+		}
+		return Command{Name: "pi", Args: []string{"--session", id}, Dir: dir}, nil
 	default:
 		return Command{}, fmt.Errorf("no launcher for agent %q", session.Agent)
 	}

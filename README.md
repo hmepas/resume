@@ -137,7 +137,7 @@ Current adapters:
 | Cursor | workspace storage | `cursor <project>` |
 | Gemini CLI | `~/.gemini/tmp` | `gemini` |
 | OpenCode | local OpenCode storage | `opencode` |
-| Pi | known Pi session locations | `pi` |
+| Pi | known Pi session locations | `pi --session <id>` |
 
 Adapter quality varies because each agent stores local history differently. Claude Code and Codex have the richest session metadata today; Cursor, Gemini, OpenCode, and Pi are progressively improving.
 
