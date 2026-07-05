@@ -2,6 +2,7 @@
 
 # usage example:
 # GOCACHE=.gocache GOMODCACHE=.gomodcache VERSION=v0.1.1 scripts/build-release.sh
+# cp packaging/homebrew/resume.rb ../homebrew-resume/Formula/resume.rb
 
 set -eu
 
