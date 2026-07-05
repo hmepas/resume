@@ -29,8 +29,7 @@ It answers the boring question that keeps stealing time:
 ### Homebrew
 
 ```sh
-brew tap hmepas/resume
-brew install resume
+brew install hmepas/resume/resume
 ```
 
 The Homebrew formula should install prebuilt GitHub Release artifacts by default. Users should not need Go or a compiler unless they explicitly choose a source build.
