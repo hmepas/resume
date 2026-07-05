@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# usage example:
+# GOCACHE=.gocache GOMODCACHE=.gomodcache VERSION=v0.1.1 scripts/build-release.sh
+
 set -eu
 
 version="${VERSION:-dev}"
