@@ -47,6 +47,9 @@ func dedupe(in []Session) []Session {
 	out := make([]Session, 0, len(in))
 	for _, session := range in {
 		key := session.Agent + "\x00" + session.SourcePath
+		if session.ID != "" {
+			key = session.Agent + "\x00" + session.ID
+		}
 		if seen[key] {
 			continue
 		}

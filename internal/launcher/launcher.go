@@ -35,7 +35,11 @@ func ForSession(session resume.Session) (Command, error) {
 	case "cursor":
 		return Command{Name: "cursor", Args: []string{dir}, Dir: dir}, nil
 	case "opencode":
-		return Command{Name: "opencode", Dir: dir}, nil
+		id := session.ID
+		if id == "" || id == session.ResumeHint {
+			return Command{}, fmt.Errorf("opencode session has no resume id")
+		}
+		return Command{Name: "opencode", Args: []string{"-s", id}, Dir: dir}, nil
 	case "pi":
 		id := session.ID
 		if id == "" || id == session.ResumeHint {

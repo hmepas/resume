@@ -1,12 +1,17 @@
 package opencode
 
 import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/hmepas/resume/internal/adapters/common"
 	"github.com/hmepas/resume/internal/resume"
+	_ "modernc.org/sqlite"
 )
 
 type Adapter struct{}
@@ -14,121 +19,161 @@ type Adapter struct{}
 func (Adapter) ID() string { return "opencode" }
 
 func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
-	roots := [][]string{
-		{".local", "share", "opencode"},
-		{".config", "opencode"},
-		{".opencode"},
+	root, err := common.HomePath(".local", "share", "opencode")
+	if err != nil {
+		return nil, err
 	}
 
 	var sessions []resume.Session
-	for _, parts := range roots {
-		root, err := common.HomePath(parts...)
-		if err != nil || !common.Exists(root) {
+	seen := map[string]bool{}
+
+	dbSessions, err := dbSessions(filepath.Join(root, "opencode.db"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	for _, session := range dbSessions {
+		if !ctx.All && !resume.PathMatches(ctx.Project, session.Project) {
 			continue
 		}
-		_ = common.WalkFiles(root, func(path string) {
-			if !strings.HasSuffix(path, ".json") && !strings.HasSuffix(path, ".jsonl") {
+		sessions = append(sessions, session)
+		seen[session.ID] = true
+	}
+
+	for _, sessionRoot := range sessionRoots(root) {
+		projectPaths := readProjects(filepath.Join(filepath.Dir(sessionRoot), "project"))
+		_ = common.WalkFiles(sessionRoot, func(path string) {
+			if !strings.HasSuffix(path, ".json") {
 				return
 			}
-			session := parseLoose("opencode", path)
-			if session.SourcePath == "" {
+			session := parseSessionFile(path, projectPaths)
+			if session.SourcePath == "" || seen[session.ID] {
 				return
 			}
 			if !ctx.All && !resume.PathMatches(ctx.Project, session.Project) {
 				return
 			}
 			sessions = append(sessions, session)
+			seen[session.ID] = true
 		})
 	}
 	return sessions, nil
 }
 
-func parseLoose(agent, path string) resume.Session {
-	var project string
-	var title string
-	var startedAt time.Time
-	var updatedAt time.Time
+func dbSessions(path string) ([]resume.Session, error) {
+	if !common.Exists(path) {
+		return nil, os.ErrNotExist
+	}
+	db, err := sql.Open("sqlite", path+"?mode=ro")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 
-	_ = common.JSONLLines(path, func(obj map[string]any) {
-		if project == "" {
-			project = firstString(obj, "cwd", "project", "projectPath", "workspace", "workspacePath")
+	rows, err := db.Query(`
+select s.id, s.directory, s.title, s.time_created, s.time_updated
+from session s
+order by s.time_updated desc`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []resume.Session
+	for rows.Next() {
+		var (
+			id        string
+			project   string
+			title     string
+			createdMS int64
+			updatedMS int64
+		)
+		if err := rows.Scan(&id, &project, &title, &createdMS, &updatedMS); err != nil {
+			return nil, err
 		}
-		if title == "" {
-			title = firstString(obj, "title", "summary", "prompt")
+		if id == "" || project == "" {
+			continue
 		}
-		if title == "" {
-			if text := common.FirstUserText(obj); common.UsefulTitle(text) {
-				title = text
-			}
+		sessions = append(sessions, newSession(id, project, title, msTime(createdMS), msTime(updatedMS), path, "high"))
+	}
+	return sessions, rows.Err()
+}
+
+func sessionRoots(root string) []string {
+	return []string{
+		filepath.Join(root, "storage", "session"),
+	}
+}
+
+func readProjects(root string) map[string]string {
+	projects := map[string]string{}
+	_ = common.WalkFiles(root, func(path string) {
+		if !strings.HasSuffix(path, ".json") {
+			return
 		}
-		if ts := firstTime(obj, "updatedAt", "updated_at", "timestamp", "createdAt", "created_at"); !ts.IsZero() {
-			if startedAt.IsZero() || ts.Before(startedAt) {
-				startedAt = ts
-			}
-			if ts.After(updatedAt) {
-				updatedAt = ts
-			}
+		var raw struct {
+			ID       string `json:"id"`
+			Worktree string `json:"worktree"`
+		}
+		if readJSON(path, &raw) == nil && raw.ID != "" && raw.Worktree != "" {
+			projects[raw.ID] = raw.Worktree
 		}
 	})
+	return projects
+}
 
-	if project == "" {
-		project = inferProjectFromPath(path)
+func parseSessionFile(path string, projects map[string]string) resume.Session {
+	var raw struct {
+		ID        string `json:"id"`
+		ProjectID string `json:"projectID"`
+		Directory string `json:"directory"`
+		Title     string `json:"title"`
+		Time      struct {
+			Created int64 `json:"created"`
+			Updated int64 `json:"updated"`
+		} `json:"time"`
 	}
-	if project == "" {
+	if readJSON(path, &raw) != nil {
 		return resume.Session{}
 	}
-	if updatedAt.IsZero() {
-		updatedAt = common.FileModTime(path)
-	}
 
+	project := raw.Directory
+	if project == "" {
+		project = projects[raw.ProjectID]
+	}
+	if raw.ID == "" || project == "" {
+		return resume.Session{}
+	}
+	return newSession(raw.ID, project, raw.Title, msTime(raw.Time.Created), msTime(raw.Time.Updated), path, "high")
+}
+
+func readJSON(path string, v any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, v)
+}
+
+func newSession(id, project, title string, startedAt, updatedAt time.Time, sourcePath, confidence string) resume.Session {
+	if updatedAt.IsZero() {
+		updatedAt = common.FileModTime(sourcePath)
+	}
 	return resume.Session{
-		Agent:      agent,
-		ID:         sessionIDFromPath(path),
+		Agent:      "opencode",
+		ID:         id,
 		Project:    project,
 		StartedAt:  startedAt,
 		UpdatedAt:  updatedAt,
 		Title:      title,
-		SourcePath: path,
-		ResumeHint: agent,
-		Confidence: "low",
+		SourcePath: sourcePath,
+		ResumeHint: "opencode -s " + id,
+		Confidence: confidence,
 	}
 }
 
-func sessionIDFromPath(path string) string {
-	base := filepath.Base(path)
-	return strings.TrimSuffix(base, filepath.Ext(base))
-}
-
-func firstString(obj map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value, ok := obj[key].(string); ok && value != "" {
-			return value
-		}
+func msTime(ms int64) time.Time {
+	if ms == 0 {
+		return time.Time{}
 	}
-	return ""
-}
-
-func firstTime(obj map[string]any, keys ...string) time.Time {
-	for _, key := range keys {
-		if value, ok := obj[key].(string); ok {
-			if ts := common.ParseTime(value); !ts.IsZero() {
-				return ts
-			}
-		}
-	}
-	return time.Time{}
-}
-
-func inferProjectFromPath(path string) string {
-	dir := filepath.Dir(path)
-	for {
-		if common.Exists(filepath.Join(dir, ".git")) {
-			return dir
-		}
-		next := filepath.Dir(dir)
-		if next == dir {
-			return ""
-		}
-		dir = next
-	}
+	return time.UnixMilli(ms)
 }

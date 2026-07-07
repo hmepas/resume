@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -289,6 +290,10 @@ func (p *Picker) askDelete() {
 	session := p.filtered[p.selected]
 	if session.SourcePath == "" {
 		p.status = "cannot delete: source path is empty"
+		return
+	}
+	if session.Agent == "opencode" && filepath.Base(session.SourcePath) == "opencode.db" {
+		p.status = "cannot delete: OpenCode sessions are stored in opencode.db"
 		return
 	}
 	p.confirm = &session

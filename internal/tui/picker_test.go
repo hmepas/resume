@@ -49,6 +49,22 @@ func TestDTypesInSearchMode(t *testing.T) {
 	}
 }
 
+func TestOpenCodeDatabaseSessionCannotBeDeleted(t *testing.T) {
+	session := resume.Session{Agent: "opencode", ID: "ses_123", SourcePath: "/tmp/opencode.db"}
+	p := &Picker{
+		sessions: []resume.Session{session},
+		filtered: []resume.Session{session},
+	}
+
+	p.askDelete()
+	if p.confirm != nil {
+		t.Fatal("askDelete opened confirmation for opencode database session")
+	}
+	if p.status != "cannot delete: OpenCode sessions are stored in opencode.db" {
+		t.Fatalf("status = %q", p.status)
+	}
+}
+
 func TestCtrlJAndCtrlKMoveSelection(t *testing.T) {
 	sessions := []resume.Session{
 		{Agent: "claude", SourcePath: "/tmp/one.jsonl"},

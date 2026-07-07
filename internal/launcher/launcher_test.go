@@ -34,3 +34,31 @@ func TestForSessionPiRequiresSessionID(t *testing.T) {
 		t.Fatal("ForSession(pi without id) returned nil error")
 	}
 }
+
+func TestForSessionOpenCodeUsesSessionID(t *testing.T) {
+	command, err := ForSession(resume.Session{
+		Agent:   "opencode",
+		ID:      "ses_0c3821344fferjRqBxk9sCT8IO",
+		Project: "/Users/hmepas/projects/grappa",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if command.Name != "opencode" {
+		t.Fatalf("Name = %q, want opencode", command.Name)
+	}
+	if !reflect.DeepEqual(command.Args, []string{"-s", "ses_0c3821344fferjRqBxk9sCT8IO"}) {
+		t.Fatalf("Args = %#v", command.Args)
+	}
+	if command.Dir != "/Users/hmepas/projects/grappa" {
+		t.Fatalf("Dir = %q", command.Dir)
+	}
+}
+
+func TestForSessionOpenCodeRequiresSessionID(t *testing.T) {
+	_, err := ForSession(resume.Session{Agent: "opencode", Project: "/tmp"})
+	if err == nil {
+		t.Fatal("ForSession(opencode without id) returned nil error")
+	}
+}
