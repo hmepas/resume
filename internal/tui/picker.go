@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"strings"
 	"unicode/utf8"
 
@@ -30,6 +30,11 @@ type Picker struct {
 	topLine  int
 	status   string
 	confirm  *resume.Session
+}
+
+var runOpenCodeSessionDelete = func(sessionID string) error {
+	cmd := exec.Command("opencode", "session", "delete", sessionID)
+	return cmd.Run()
 }
 
 func CanRun(in, out *os.File) bool {
@@ -288,12 +293,17 @@ func (p *Picker) askDelete() {
 		return
 	}
 	session := p.filtered[p.selected]
-	if session.SourcePath == "" {
-		p.status = "cannot delete: source path is empty"
+	if session.Agent == "opencode" {
+		if session.ID == "" {
+			p.status = "cannot delete: OpenCode session id is empty"
+			return
+		}
+		p.confirm = &session
+		p.status = "delete opencode session? y/N"
 		return
 	}
-	if session.Agent == "opencode" && filepath.Base(session.SourcePath) == "opencode.db" {
-		p.status = "cannot delete: OpenCode sessions are stored in opencode.db"
+	if session.SourcePath == "" {
+		p.status = "cannot delete: source path is empty"
 		return
 	}
 	p.confirm = &session
@@ -303,7 +313,7 @@ func (p *Picker) askDelete() {
 func (p *Picker) deleteConfirmed() {
 	session := *p.confirm
 	p.confirm = nil
-	if err := os.Remove(session.SourcePath); err != nil {
+	if err := deleteSession(session); err != nil {
 		p.status = "delete failed: " + err.Error()
 		return
 	}
@@ -320,15 +330,29 @@ func (p *Picker) deleteConfirmed() {
 	p.status = "deleted " + session.Agent + " session"
 }
 
+func deleteSession(session resume.Session) error {
+	if session.Agent == "opencode" {
+		return runOpenCodeSessionDelete(session.ID)
+	}
+	return os.Remove(session.SourcePath)
+}
+
 func removeSession(sessions []resume.Session, deleted resume.Session) []resume.Session {
 	out := sessions[:0]
 	for _, session := range sessions {
-		if session.SourcePath == deleted.SourcePath && session.Agent == deleted.Agent {
+		if sameSession(session, deleted) {
 			continue
 		}
 		out = append(out, session)
 	}
 	return out
+}
+
+func sameSession(a, b resume.Session) bool {
+	if a.Agent != b.Agent || a.SourcePath != b.SourcePath {
+		return false
+	}
+	return b.ID == "" || a.ID == b.ID
 }
 
 func (p *Picker) refilter() {

@@ -49,7 +49,7 @@ func TestDTypesInSearchMode(t *testing.T) {
 	}
 }
 
-func TestOpenCodeDatabaseSessionCannotBeDeleted(t *testing.T) {
+func TestOpenCodeDatabaseSessionCanBeDeleted(t *testing.T) {
 	session := resume.Session{Agent: "opencode", ID: "ses_123", SourcePath: "/tmp/opencode.db"}
 	p := &Picker{
 		sessions: []resume.Session{session},
@@ -58,9 +58,42 @@ func TestOpenCodeDatabaseSessionCannotBeDeleted(t *testing.T) {
 
 	p.askDelete()
 	if p.confirm != nil {
-		t.Fatal("askDelete opened confirmation for opencode database session")
+		if *p.confirm != session {
+			t.Fatalf("confirm = %#v, want %#v", *p.confirm, session)
+		}
+	} else {
+		t.Fatal("askDelete did not open confirmation for opencode database session")
 	}
-	if p.status != "cannot delete: OpenCode sessions are stored in opencode.db" {
+	if p.status != "delete opencode session? y/N" {
+		t.Fatalf("status = %q", p.status)
+	}
+}
+
+func TestOpenCodeDeleteUsesSessionID(t *testing.T) {
+	called := ""
+	original := runOpenCodeSessionDelete
+	runOpenCodeSessionDelete = func(sessionID string) error {
+		called = sessionID
+		return nil
+	}
+	defer func() { runOpenCodeSessionDelete = original }()
+
+	deleted := resume.Session{Agent: "opencode", ID: "ses_123", SourcePath: "/tmp/opencode.db"}
+	kept := resume.Session{Agent: "opencode", ID: "ses_456", SourcePath: "/tmp/opencode.db"}
+	p := &Picker{
+		sessions: []resume.Session{deleted, kept},
+		filtered: []resume.Session{deleted, kept},
+		confirm:  &deleted,
+	}
+
+	p.deleteConfirmed()
+	if called != "ses_123" {
+		t.Fatalf("deleted session id = %q, want ses_123", called)
+	}
+	if len(p.sessions) != 1 || p.sessions[0] != kept {
+		t.Fatalf("sessions after delete = %#v, want only %#v", p.sessions, kept)
+	}
+	if p.status != "deleted opencode session" {
 		t.Fatalf("status = %q", p.status)
 	}
 }
