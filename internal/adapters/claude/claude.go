@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hmepas/resume/internal/adapters/common"
 	"github.com/hmepas/resume/internal/resume"
@@ -27,19 +28,63 @@ func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 
 	activeNames := activeSessionNames()
 	var sessions []resume.Session
-	_ = common.WalkFiles(root, func(path string) {
-		if strings.HasSuffix(path, ".jsonl") && !isClaudeChildSession(path) {
-			session := parseSession(path, activeNames)
-			if session.SourcePath == "" {
-				return
-			}
-			if !ctx.All && !resume.PathMatches(ctx.Project, session.Project) {
-				return
-			}
-			sessions = append(sessions, session)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, nil
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
 		}
-	})
+		// Cheap prefilter: dir names encode the project path. It is loose
+		// (over-inclusive), the recorded cwd below filters precisely.
+		if !ctx.All && !looseDirMatch(entry.Name(), ctx.Project) {
+			continue
+		}
+		_ = common.WalkFiles(filepath.Join(root, entry.Name()), func(path string) {
+			if strings.HasSuffix(path, ".jsonl") && !isClaudeChildSession(path) {
+				session := parseSession(path, activeNames)
+				if session.SourcePath == "" {
+					return
+				}
+				if !ctx.All && !resume.PathMatches(ctx.Project, session.Project) {
+					return
+				}
+				sessions = append(sessions, session)
+			}
+		})
+	}
 	return sessions, nil
+}
+
+// looseDirMatch reports whether an encoded project dir name could refer to a
+// path inside the project. Claude replaces path separators and punctuation
+// with "-", which is ambiguous, so both sides are normalized the same way and
+// compared by prefix; over-matching is fine, under-matching is not.
+func looseDirMatch(dirName string, project resume.Project) bool {
+	dir := looseKey(dirName)
+	for _, path := range []string{project.Root, project.Path} {
+		key := looseKey(path)
+		if key == "" {
+			continue
+		}
+		if dir == key || strings.HasPrefix(dir, key+"-") {
+			return true
+		}
+	}
+	return false
+}
+
+func looseKey(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func activeSessionNames() map[string]string {
@@ -87,7 +132,24 @@ func decodeProjectPath(dir string) string {
 	return string(filepath.Separator) + strings.ReplaceAll(strings.TrimPrefix(base, "-"), "-", string(filepath.Separator))
 }
 
+const (
+	boundedHead = 64 * 1024
+	boundedTail = 64 * 1024
+)
+
 func parseSession(path string, activeNames map[string]string) resume.Session {
+	session := scanSession(path, activeNames, true)
+	if session.SourcePath == "" {
+		// The bounded scan found nothing useful (e.g. a title buried in the
+		// middle of the file); fall back to a full scan for this file only.
+		if info, err := os.Stat(path); err == nil && info.Size() > boundedHead+boundedTail {
+			session = scanSession(path, activeNames, false)
+		}
+	}
+	return session
+}
+
+func scanSession(path string, activeNames map[string]string, bounded bool) resume.Session {
 	project := decodeProjectPath(filepath.Dir(path))
 	var title string
 	var aiTitle string
@@ -98,7 +160,13 @@ func parseSession(path string, activeNames map[string]string) resume.Session {
 	var startedAt time.Time
 	var updatedAt time.Time
 
-	_ = common.JSONLLines(path, func(obj map[string]any) {
+	scan := common.JSONLLines
+	if bounded {
+		scan = func(path string, fn func(map[string]any)) error {
+			return common.JSONLBounded(path, boundedHead, boundedTail, fn)
+		}
+	}
+	_ = scan(path, func(obj map[string]any) {
 		if sessionID == "" {
 			sessionID = common.String(obj, "sessionId")
 		}

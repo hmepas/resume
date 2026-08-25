@@ -2,8 +2,10 @@ package common
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -44,6 +46,58 @@ func JSONLLines(path string, fn func(map[string]any)) error {
 		}
 	}
 	return scanner.Err()
+}
+
+// JSONLBounded parses complete JSONL lines from the first headMax bytes and
+// the last tailMax bytes of the file, skipping the middle. Small files are
+// parsed in full. Lines cut by either boundary are dropped.
+func JSONLBounded(path string, headMax, tailMax int64, fn func(map[string]any)) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.Size() <= headMax+tailMax {
+		return JSONLLines(path, fn)
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	head := make([]byte, headMax)
+	n, err := io.ReadFull(file, head)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		return err
+	}
+	if i := bytes.LastIndexByte(head[:n], '\n'); i >= 0 {
+		parseJSONLChunk(head[:i+1], fn)
+	}
+
+	tail := make([]byte, tailMax)
+	n, err = file.ReadAt(tail, info.Size()-tailMax)
+	if err != nil && err != io.EOF {
+		return err
+	}
+	// The first tail line is usually cut in the middle; skip it.
+	if i := bytes.IndexByte(tail[:n], '\n'); i >= 0 {
+		parseJSONLChunk(tail[i+1:n], fn)
+	}
+	return nil
+}
+
+func parseJSONLChunk(data []byte, fn func(map[string]any)) {
+	for _, line := range bytes.Split(data, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(line, &obj); err == nil {
+			fn(obj)
+		}
+	}
 }
 
 func FileModTime(path string) time.Time {

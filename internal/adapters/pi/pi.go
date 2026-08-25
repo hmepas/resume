@@ -45,7 +45,7 @@ func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 
 func parseLoose(path string) resume.Session {
 	var session resume.Session
-	_ = common.JSONLLines(path, func(obj map[string]any) {
+	_ = common.JSONLBounded(path, 64*1024, 64*1024, func(obj map[string]any) {
 		if session.Project == "" {
 			for _, key := range []string{"cwd", "project", "projectPath", "workspace", "workspacePath"} {
 				if value, ok := obj[key].(string); ok && value != "" {

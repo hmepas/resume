@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -59,7 +60,23 @@ func readIndex(path string) map[string]string {
 	return out
 }
 
+const (
+	boundedHead = 64 * 1024
+	boundedTail = 64 * 1024
+)
+
 func parseSession(path string, names map[string]string) resume.Session {
+	session := scanSession(path, names, true)
+	if session.SourcePath != "" && session.Title == "" {
+		// Title buried in the middle of a big file; rescan it in full.
+		if info, err := os.Stat(path); err == nil && info.Size() > boundedHead+boundedTail {
+			session = scanSession(path, names, false)
+		}
+	}
+	return session
+}
+
+func scanSession(path string, names map[string]string, bounded bool) resume.Session {
 	var (
 		id        string
 		project   string
@@ -68,7 +85,15 @@ func parseSession(path string, names map[string]string) resume.Session {
 		updatedAt time.Time
 	)
 
-	_ = common.JSONLLines(path, func(obj map[string]any) {
+	// session_meta is the first line and the newest timestamp is on the last
+	// one, so bounded head+tail reads are enough.
+	scan := common.JSONLLines
+	if bounded {
+		scan = func(path string, fn func(map[string]any)) error {
+			return common.JSONLBounded(path, boundedHead, boundedTail, fn)
+		}
+	}
+	_ = scan(path, func(obj map[string]any) {
 		ts := common.ParseTime(common.String(obj, "timestamp"))
 		if !ts.IsZero() {
 			if startedAt.IsZero() || ts.Before(startedAt) {

@@ -117,7 +117,7 @@ resume --version
 | Key | Action |
 | --- | --- |
 | `Enter` | launch selected session |
-| `/` | enter search mode |
+| `/` | enter search mode (fuzzy titles plus substring search inside session files via `rg`/`ag`/`grep`) |
 | `Esc` | clear search, then quit |
 | `Ctrl-C` | quit |
 | `Ctrl-N`, `Ctrl-J`, `j` | next session |

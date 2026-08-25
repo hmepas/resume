@@ -13,7 +13,7 @@ type match struct {
 	score   int
 }
 
-func filterSessions(sessions []resume.Session, query string) []resume.Session {
+func filterSessions(sessions []resume.Session, query string, content map[string]bool) []resume.Session {
 	query = strings.TrimSpace(strings.ToLower(query))
 	if query == "" {
 		return sessions
@@ -22,6 +22,10 @@ func filterSessions(sessions []resume.Session, query string) []resume.Session {
 	matches := make([]match, 0, len(sessions))
 	for _, session := range sessions {
 		score, ok := sessionScore(session, query)
+		if !ok && content[session.SourcePath] {
+			// Content-only match: keep it, ranked below title matches.
+			score, ok = 0, true
+		}
 		if ok {
 			matches = append(matches, match{session: session, score: score})
 		}

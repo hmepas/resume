@@ -30,6 +30,7 @@ type Picker struct {
 	topLine  int
 	status   string
 	confirm  *resume.Session
+	content  *contentSearcher
 }
 
 var runOpenCodeSessionDelete = func(sessionID string) error {
@@ -57,6 +58,7 @@ func Pick(in, out *os.File, sessions []resume.Session) (PickResult, error) {
 		out:      out,
 		sessions: sessions,
 		filtered: sessions,
+		content:  newContentSearcher(),
 	}
 
 	fmt.Fprint(out, "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h")
@@ -319,7 +321,7 @@ func (p *Picker) deleteConfirmed() {
 	}
 
 	p.sessions = removeSession(p.sessions, session)
-	p.filtered = filterSessions(p.sessions, p.query)
+	p.filtered = filterSessions(p.sessions, p.query, p.content.matches(p.sessions, p.query))
 	if p.selected >= len(p.filtered) {
 		p.selected = len(p.filtered) - 1
 	}
@@ -356,7 +358,7 @@ func sameSession(a, b resume.Session) bool {
 }
 
 func (p *Picker) refilter() {
-	p.filtered = filterSessions(p.sessions, p.query)
+	p.filtered = filterSessions(p.sessions, p.query, p.content.matches(p.sessions, p.query))
 	p.selected = 0
 	p.offset = 0
 	if p.query == "" {
