@@ -94,6 +94,12 @@ Machine-readable output:
 resume --json
 ```
 
+Print only the session count for the current project (useful for prompts):
+
+```sh
+resume --count
+```
+
 Limit results:
 
 ```sh

@@ -17,16 +17,18 @@ var version = "dev"
 
 func main() {
 	var (
-		all      bool
-		jsonOut  bool
-		limit    int
-		noTUI    bool
-		printCmd bool
-		showHelp bool
-		showVer  bool
+		all       bool
+		countOnly bool
+		jsonOut   bool
+		limit     int
+		noTUI     bool
+		printCmd  bool
+		showHelp  bool
+		showVer   bool
 	)
 
 	flag.BoolVar(&all, "all", false, "show sessions for all projects")
+	flag.BoolVar(&countOnly, "count", false, "print only the number of sessions")
 	flag.BoolVar(&jsonOut, "json", false, "print JSON")
 	flag.IntVar(&limit, "limit", 50, "maximum sessions to print")
 	flag.BoolVar(&noTUI, "no-interactive", false, "print table instead of interactive picker")
@@ -54,8 +56,16 @@ func main() {
 		All:     all,
 		Limit:   limit,
 	}
+	if countOnly {
+		opts.Limit = 0
+	}
 
 	sessions, diagnostics := resume.Collect(context.Background(), adapters.Builtin(), opts)
+
+	if countOnly {
+		fmt.Println(len(sessions))
+		return
+	}
 
 	if jsonOut {
 		out := struct {
@@ -100,7 +110,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `Usage:
-  resume [--all] [--json] [--limit N] [--no-interactive] [--print-command]
+  resume [--all] [--count] [--json] [--limit N] [--no-interactive] [--print-command]
 
 Shows recent AI coding sessions for the current project across supported agents.
 
