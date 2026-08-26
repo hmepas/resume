@@ -112,6 +112,26 @@ Show version:
 resume --version
 ```
 
+## Starship Prompt
+
+Show the per-project session count in your prompt with a [custom command](https://starship.rs/config/#custom-commands):
+
+```toml
+[custom.resume]
+command = "resume --count"
+when = '[ "$(resume --count)" != "0" ]'
+format = '[ 󰚩 $output](fg:#2aa198)'
+```
+
+If your `format` string is customized, add `${custom.resume}` to it.
+
+To avoid running `resume` synchronously on every prompt, cache `resume --count` from a shell `precmd` hook into an env var and render it with the `env_var` module instead:
+
+```toml
+[env_var.RESUME_SESSIONS]
+format = '[ 󰚩 $env_value](fg:#2aa198)'
+```
+
 ## Interactive Controls
 
 | Key | Action |
