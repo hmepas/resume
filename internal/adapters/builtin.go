@@ -7,6 +7,7 @@ import (
 	"github.com/hmepas/resume/internal/adapters/gemini"
 	"github.com/hmepas/resume/internal/adapters/opencode"
 	"github.com/hmepas/resume/internal/adapters/pi"
+	"github.com/hmepas/resume/internal/adapters/primeagent"
 	"github.com/hmepas/resume/internal/resume"
 )
 
@@ -18,5 +19,6 @@ func Builtin() []resume.Adapter {
 		cursor.Adapter{},
 		opencode.Adapter{},
 		pi.Adapter{},
+		primeagent.Adapter{},
 	}
 }

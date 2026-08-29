@@ -38,11 +38,7 @@ func cleanPath(path string) string {
 	if path == "" {
 		return ""
 	}
-	if expanded, ok := strings.CutPrefix(path, "~/"); ok {
-		if home, err := os.UserHomeDir(); err == nil {
-			path = filepath.Join(home, expanded)
-		}
-	}
+	path = ExpandHome(path)
 	abs, err := filepath.Abs(path)
 	if err == nil {
 		path = abs
@@ -52,6 +48,19 @@ func cleanPath(path string) string {
 		path = eval
 	}
 	return filepath.Clean(path)
+}
+
+// ExpandHome rewrites a leading "~" or "~/" to the user's home directory; the
+// path is returned unchanged when the home directory is unknown.
+func ExpandHome(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, strings.TrimPrefix(path[1:], "/"))
 }
 
 func PathMatches(project Project, candidate string) bool {

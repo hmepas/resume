@@ -26,6 +26,10 @@ func Exists(path string) bool {
 	return err == nil
 }
 
+const maxJSONLLine = 8 * 1024 * 1024
+
+// JSONLLines parses each line as a JSON object. Lines longer than maxJSONLLine
+// are skipped so one oversized entry does not hide the rest of the file.
 func JSONLLines(path string, fn func(map[string]any)) error {
 	file, err := os.Open(path)
 	if err != nil {
@@ -33,19 +37,43 @@ func JSONLLines(path string, fn func(map[string]any)) error {
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+	reader := bufio.NewReaderSize(file, 64*1024)
+	line := make([]byte, 0, 64*1024)
+	skipping := false
+	for {
+		part, readErr := reader.ReadSlice('\n')
+		if readErr == nil {
+			part = part[:len(part)-1]
+		}
+		if !skipping && len(line)+len(part) > maxJSONLLine {
+			skipping = true
+			line = line[:0]
+		}
+		if !skipping {
+			line = append(line, part...)
+		}
+		if readErr == bufio.ErrBufferFull {
 			continue
 		}
-		var obj map[string]any
-		if err := json.Unmarshal([]byte(line), &obj); err == nil {
-			fn(obj)
+
+		if !skipping {
+			if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+				var obj map[string]any
+				if err := json.Unmarshal(trimmed, &obj); err == nil {
+					fn(obj)
+				}
+			}
+		}
+		line = line[:0]
+		skipping = false
+
+		if readErr == io.EOF {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
 		}
 	}
-	return scanner.Err()
 }
 
 // JSONLBounded parses complete JSONL lines from the first headMax bytes and

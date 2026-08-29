@@ -129,4 +129,10 @@ func TestAgentColorCodeIsStable(t *testing.T) {
 	if agentColorCode("codex") != "32" {
 		t.Fatalf("codex color = %q, want 32", agentColorCode("codex"))
 	}
+	if agentColorCode("prime-agent") != "95" {
+		t.Fatalf("prime-agent color = %q, want 95", agentColorCode("prime-agent"))
+	}
+	if agentColorCode("gemini") == agentColorCode("prime-agent") {
+		t.Fatal("gemini and prime-agent share a color")
+	}
 }

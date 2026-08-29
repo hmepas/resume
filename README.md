@@ -11,7 +11,7 @@ resume
 
 It answers the boring question that keeps stealing time:
 
-> Was this project last touched in Claude Code, Codex, Cursor, Gemini, Pi, or something else?
+> Was this project last touched in Claude Code, Codex, Cursor, Gemini, Prime Agent, Pi, or something else?
 
 ## Features
 
@@ -163,8 +163,9 @@ Current adapters:
 | Gemini CLI | `~/.gemini/tmp` | `gemini` |
 | OpenCode | local OpenCode storage | `opencode` |
 | Pi | known Pi session locations | `pi --session <id>` |
+| Prime Agent | `~/.prime/agent/sessions` or configured `sessionDir` | `prime-agent --resume <id>` |
 
-Adapter quality varies because each agent stores local history differently. Claude Code and Codex have the richest session metadata today; Cursor, Gemini, OpenCode, and Pi are progressively improving.
+Adapter quality varies because each agent stores local history differently. Claude Code, Codex, and Prime Agent have the richest session metadata today; Cursor, Gemini, OpenCode, and Pi are progressively improving.
 
 ## Privacy
 

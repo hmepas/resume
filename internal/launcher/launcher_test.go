@@ -62,3 +62,31 @@ func TestForSessionOpenCodeRequiresSessionID(t *testing.T) {
 		t.Fatal("ForSession(opencode without id) returned nil error")
 	}
 }
+
+func TestForSessionPrimeAgentUsesSessionID(t *testing.T) {
+	command, err := ForSession(resume.Session{
+		Agent:   "prime-agent",
+		ID:      "01a04f83-68e0-763e-b66c-6c5118d2eb20",
+		Project: "/Users/hmepas/projects/resume",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if command.Name != "prime-agent" {
+		t.Fatalf("Name = %q, want prime-agent", command.Name)
+	}
+	if !reflect.DeepEqual(command.Args, []string{"--resume", "01a04f83-68e0-763e-b66c-6c5118d2eb20"}) {
+		t.Fatalf("Args = %#v", command.Args)
+	}
+	if command.Dir != "/Users/hmepas/projects/resume" {
+		t.Fatalf("Dir = %q", command.Dir)
+	}
+}
+
+func TestForSessionPrimeAgentRequiresSessionID(t *testing.T) {
+	_, err := ForSession(resume.Session{Agent: "prime-agent", Project: "/tmp"})
+	if err == nil {
+		t.Fatal("ForSession(prime-agent without id) returned nil error")
+	}
+}

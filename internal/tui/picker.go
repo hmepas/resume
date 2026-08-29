@@ -420,15 +420,18 @@ func (p *Picker) queryText() string {
 	return "/ " + p.query
 }
 
+// agentColWidth fits the longest builtin agent id ("prime-agent").
+const agentColWidth = 11
+
 func (p *Picker) renderRow(b *strings.Builder, index int, session resume.Session) {
 	prefix := "  "
 	if index == p.selected {
 		prefix = "> "
 	}
 	timeCol := session.UpdatedAt.Local().Format("2006-01-02 15:04")
-	agentCol := fmt.Sprintf("%-8s", truncate(session.Agent, 8))
+	agentCol := fmt.Sprintf("%-*s", agentColWidth, truncate(session.Agent, agentColWidth))
 	idCol := shortID(session.ID)
-	metaWidth := runeWidth(prefix) + 16 + 2 + 8 + 2 + runeWidth(idCol) + 2
+	metaWidth := runeWidth(prefix) + 16 + 2 + agentColWidth + 2 + runeWidth(idCol) + 2
 	titleWidth := p.width - metaWidth
 	if titleWidth < 0 {
 		titleWidth = 0
@@ -557,6 +560,8 @@ func agentColorCode(agent string) string {
 		return "36"
 	case "opencode":
 		return "33"
+	case "prime-agent":
+		return "95"
 	default:
 		return ""
 	}

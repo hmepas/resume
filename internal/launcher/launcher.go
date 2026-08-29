@@ -19,36 +19,27 @@ func ForSession(session resume.Session) (Command, error) {
 	dir := session.Project
 	switch session.Agent {
 	case "codex":
-		id := session.ID
-		if id == "" || id == session.ResumeHint {
-			return Command{}, fmt.Errorf("codex session has no resume id")
-		}
-		return Command{Name: "codex", Args: []string{"resume", id}, Dir: dir}, nil
-	case "claude":
-		id := session.ID
-		if id == "" || id == session.ResumeHint {
-			return Command{}, fmt.Errorf("claude session has no resume id")
-		}
-		return Command{Name: "claude", Args: []string{"--resume", id}, Dir: dir}, nil
+		return resumeCommand(session, "resume")
+	case "claude", "prime-agent":
+		return resumeCommand(session, "--resume")
 	case "gemini":
 		return Command{Name: "gemini", Dir: dir}, nil
 	case "cursor":
 		return Command{Name: "cursor", Args: []string{dir}, Dir: dir}, nil
 	case "opencode":
-		id := session.ID
-		if id == "" || id == session.ResumeHint {
-			return Command{}, fmt.Errorf("opencode session has no resume id")
-		}
-		return Command{Name: "opencode", Args: []string{"-s", id}, Dir: dir}, nil
+		return resumeCommand(session, "-s")
 	case "pi":
-		id := session.ID
-		if id == "" || id == session.ResumeHint {
-			return Command{}, fmt.Errorf("pi session has no resume id")
-		}
-		return Command{Name: "pi", Args: []string{"--session", id}, Dir: dir}, nil
+		return resumeCommand(session, "--session")
 	default:
 		return Command{}, fmt.Errorf("no launcher for agent %q", session.Agent)
 	}
+}
+
+func resumeCommand(session resume.Session, args ...string) (Command, error) {
+	if session.ID == "" || session.ID == session.ResumeHint {
+		return Command{}, fmt.Errorf("%s session has no resume id", session.Agent)
+	}
+	return Command{Name: session.Agent, Args: append(args, session.ID), Dir: session.Project}, nil
 }
 
 func Run(command Command) error {
