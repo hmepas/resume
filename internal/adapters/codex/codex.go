@@ -83,6 +83,7 @@ func scanSession(path string, names map[string]string, bounded bool) resume.Sess
 		title     string
 		startedAt time.Time
 		updatedAt time.Time
+		guardian  bool
 	)
 
 	// session_meta is the first line and the newest timestamp is on the last
@@ -105,6 +106,7 @@ func scanSession(path string, names map[string]string, bounded bool) resume.Sess
 		}
 
 		if common.String(obj, "type") == "session_meta" {
+			guardian = isGuardian(obj)
 			if v := common.String(obj, "payload", "id"); v != "" {
 				id = v
 			}
@@ -125,7 +127,7 @@ func scanSession(path string, names map[string]string, bounded bool) resume.Sess
 	if name := names[id]; name != "" {
 		title = combineTitle(name, title)
 	}
-	if project == "" {
+	if project == "" || guardian {
 		return resume.Session{}
 	}
 

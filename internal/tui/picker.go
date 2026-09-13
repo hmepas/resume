@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/hmepas/resume/internal/adapters/codex"
 	"github.com/hmepas/resume/internal/resume"
 )
 
@@ -310,6 +311,9 @@ func (p *Picker) askDelete() {
 	}
 	p.confirm = &session
 	p.status = fmt.Sprintf("delete %s session file? y/N", session.Agent)
+	if session.Agent == "codex" {
+		p.status = "delete codex session and its guardian reviews? y/N"
+	}
 }
 
 func (p *Picker) deleteConfirmed() {
@@ -335,6 +339,9 @@ func (p *Picker) deleteConfirmed() {
 func deleteSession(session resume.Session) error {
 	if session.Agent == "opencode" {
 		return runOpenCodeSessionDelete(session.ID)
+	}
+	if session.Agent == "codex" {
+		return codex.DeleteSession(session)
 	}
 	return os.Remove(session.SourcePath)
 }
