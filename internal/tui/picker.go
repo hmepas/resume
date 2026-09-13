@@ -117,7 +117,13 @@ single:
 
 	if len(data) == 1 {
 		switch data[0] {
-		case 3, 27:
+		case 27:
+			if p.search {
+				p.search = false
+				return "render"
+			}
+			fallthrough
+		case 3:
 			if p.search || p.query != "" {
 				p.search = false
 				p.query = ""
@@ -393,7 +399,7 @@ func (p *Picker) render() {
 	var b strings.Builder
 	b.WriteString("\x1b[H\x1b[2J")
 	p.writeLine(&b, bold(fmt.Sprintf("resume"))+"  "+fmt.Sprintf("%d/%d  ", len(p.filtered), len(p.sessions))+p.queryText())
-	help := "enter run  / search  esc clear/quit  ^n/^p ^j/^k j/k  d/^d del  click"
+	help := "enter run  / search  esc stop/clear/quit  ^n/^p ^j/^k j/k  d/^d del  click"
 	if p.confirm != nil {
 		help = "confirm delete: y yes / n no"
 	}

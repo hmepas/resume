@@ -136,3 +136,21 @@ func TestAgentColorCodeIsStable(t *testing.T) {
 		t.Fatal("gemini and prime-agent share a color")
 	}
 }
+
+func TestEscapePreservesThenClearsSearchThenQuits(t *testing.T) {
+	sessions := []resume.Session{{ID: "one", Title: "match one"}, {ID: "two", Title: "match two"}, {ID: "other", Title: "other"}}
+	p := &Picker{sessions: sessions, filtered: sessions[:2], query: "match", search: true, selected: 1, height: 24}
+	if got := p.handle([]byte{27}); got != "render" || p.search || p.query != "match" || len(p.filtered) != 2 || p.selected != 1 {
+		t.Fatalf("first escape: action=%q picker=%+v", got, p)
+	}
+	p.handle([]byte("k"))
+	if p.selected != 0 || p.query != "match" {
+		t.Fatal("navigation did not preserve search")
+	}
+	if got := p.handle([]byte{27}); got != "render" || p.query != "" || len(p.filtered) != 3 {
+		t.Fatalf("second escape: action=%q picker=%+v", got, p)
+	}
+	if got := p.handle([]byte{27}); got != "cancel" {
+		t.Fatalf("third escape = %q", got)
+	}
+}

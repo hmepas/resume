@@ -1,26 +1,26 @@
 class Resume < Formula
   desc "Cross-agent AI coding session picker"
   homepage "https://github.com/hmepas/resume"
-  version "0.1.5"
+  version "0.1.6"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/hmepas/resume/releases/download/v#{version}/resume_Darwin_arm64.tar.gz"
-      sha256 "52204af8fa07bc78cc5cc2a739924773ede43661a179ce9b76cd96bb493d88a4"
+      sha256 "501ab1149cbb512da8034f63080292b189a964aba48cc8ebfaa11eb533f6c446"
     else
       url "https://github.com/hmepas/resume/releases/download/v#{version}/resume_Darwin_x86_64.tar.gz"
-      sha256 "df6f786ac5e8fafa13f445fc6e6a54f8a9c24947e2266e7a4a64da4b5f493990"
+      sha256 "7fd13732d6fa797588b1a58dc8a4e1b001abb414cb695cef5ed8354688a2cd9f"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/hmepas/resume/releases/download/v#{version}/resume_Linux_arm64.tar.gz"
-      sha256 "e5c189da591b574cd8487d8aab40babdbb66036ef777b2ef327189d13da85e30"
+      sha256 "5a2ff7d70f96c84d6c849d40d1c7cfeebc48a048484de5326f74a49c0047a174"
     else
       url "https://github.com/hmepas/resume/releases/download/v#{version}/resume_Linux_x86_64.tar.gz"
-      sha256 "415ee34edb0a3c7ee4e269abb9c1ea35ab6afbb0098b4f8215b1e004f477b8fd"
+      sha256 "71320bab7d8460cecdfdacda1d4a43e6f538cf5fdf6b71acd4e5f66f95e7c6af"
     end
   end
 

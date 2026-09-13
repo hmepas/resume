@@ -381,3 +381,29 @@ func writeTestSession(t *testing.T, path, id, cwd string) {
 		t.Fatal(err)
 	}
 }
+
+func TestParseSessionIgnoresStatusHeartbeats(t *testing.T) {
+	for _, large := range []bool{false, true} {
+		t.Run(map[bool]string{false: "small", true: "buried activity"}[large], func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			data := `{"type":"session","id":"one","cwd":"/repo","timestamp":"2026-08-31T13:00:00Z"}` + "\n" +
+				`{"type":"message","timestamp":"2026-08-31T13:01:00Z","message":{"role":"user","content":"prompt"}}` + "\n"
+			heartbeat := `{"type":"agent_status","timestamp":"2026-09-10T12:50:00Z"}` + "\n"
+			if large {
+				data += strings.Repeat(heartbeat, 2000)
+			}
+			data += `{"type":"message","timestamp":"2026-08-31T13:29:00Z","message":{"role":"assistant","content":"answer"}}` + "\n"
+			data += heartbeat
+			if large {
+				data += strings.Repeat(heartbeat, 2000)
+			}
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			want := time.Date(2026, 8, 31, 13, 29, 0, 0, time.UTC)
+			if got := parseSession(path).UpdatedAt; !got.Equal(want) {
+				t.Fatalf("UpdatedAt = %s, want %s", got, want)
+			}
+		})
+	}
+}

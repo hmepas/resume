@@ -138,7 +138,7 @@ format = '[ 󰚩 $env_value](fg:#2aa198)'
 | --- | --- |
 | `Enter` | launch selected session |
 | `/` | enter search mode (fuzzy titles plus substring search inside session files via `rg`/`ag`/`grep`) |
-| `Esc` | clear search, then quit |
+| `Esc` | stop editing search, then clear search, then quit |
 | `Ctrl-C` | quit |
 | `Ctrl-N`, `Ctrl-J`, `j` | next session |
 | `Ctrl-P`, `Ctrl-K`, `k` | previous session |

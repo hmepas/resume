@@ -209,6 +209,7 @@ func buildSession(path string, header sessionHeader) resume.Session {
 }
 
 func scanBody(path string, bounded bool) (name, title string, updatedAt time.Time) {
+	sawStatus := false
 	scan := common.JSONLLines
 	if bounded {
 		scan = func(path string, fn func(map[string]any)) error {
@@ -218,6 +219,9 @@ func scanBody(path string, bounded bool) (name, title string, updatedAt time.Tim
 	_ = scan(path, func(obj map[string]any) {
 		switch common.String(obj, "type") {
 		case "session":
+			return
+		case "agent_status":
+			sawStatus = true
 			return
 		case "session_info":
 			// An empty name clears an earlier rename, so the last entry wins.
@@ -232,6 +236,12 @@ func scanBody(path string, bounded bool) (name, title string, updatedAt time.Tim
 			}
 		}
 	})
+	// Status heartbeats can fill the tail window and hide the last activity.
+	if bounded && sawStatus {
+		if info, err := os.Stat(path); err == nil && info.Size() > boundedHead+boundedTail {
+			return scanBody(path, false)
+		}
+	}
 	return name, title, updatedAt
 }
 
