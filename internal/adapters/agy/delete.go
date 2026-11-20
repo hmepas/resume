@@ -49,7 +49,7 @@ func deleteSessionInRoot(root string, session resume.Session) error {
 	ids := []string{id}
 	var db *sql.DB
 	if dbPath := filepath.Join(root, summariesDB); common.Exists(dbPath) {
-		db, err = sql.Open("sqlite", sqliteURI(dbPath, "_pragma=busy_timeout(5000)"))
+		db, err = sql.Open("sqlite", common.SQLiteURI(dbPath, "_pragma=busy_timeout(5000)"))
 		if err != nil {
 			return err
 		}

@@ -63,15 +63,23 @@ func dbSessions(path string) ([]resume.Session, error) {
 	if !common.Exists(path) {
 		return nil, os.ErrNotExist
 	}
-	db, err := sql.Open("sqlite", path+"?mode=ro")
+	db, err := sql.Open("sqlite", common.SQLiteURI(path, "mode=ro&_pragma=busy_timeout(2000)"))
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
+	table, err := sessionTable(db)
+	if err != nil {
+		return nil, err
+	}
+	if table == "" {
+		return nil, nil
+	}
+
 	rows, err := db.Query(`
 select s.id, s.directory, s.title, s.time_created, s.time_updated
-from session s
+from ` + table + ` s
 order by s.time_updated desc`)
 	if err != nil {
 		return nil, err
@@ -83,7 +91,7 @@ order by s.time_updated desc`)
 		var (
 			id        string
 			project   string
-			title     string
+			title     sql.NullString
 			createdMS int64
 			updatedMS int64
 		)
@@ -93,9 +101,24 @@ order by s.time_updated desc`)
 		if id == "" || project == "" {
 			continue
 		}
-		sessions = append(sessions, newSession(id, project, title, msTime(createdMS), msTime(updatedMS), path, "high"))
+		sessions = append(sessions, newSession(id, project, title.String, msTime(createdMS), msTime(updatedMS), path, "high"))
 	}
 	return sessions, rows.Err()
+}
+
+// sessionTable returns the sessions table for the opencode schema in use:
+// session_v2 (opencode 2.x) or the legacy session table. Empty if neither exists.
+func sessionTable(db *sql.DB) (string, error) {
+	var name string
+	err := db.QueryRow(`
+select name from sqlite_master
+where type = 'table' and name in ('session_v2', 'session')
+order by name = 'session_v2' desc
+limit 1`).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return name, err
 }
 
 func sessionRoots(root string) []string {

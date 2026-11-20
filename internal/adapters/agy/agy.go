@@ -47,19 +47,13 @@ func dataRoot() (string, error) {
 	return root, nil
 }
 
-// sqliteURI builds a file: URI so paths with spaces or special characters are
-// escaped correctly before the query parameters are appended.
-func sqliteURI(path, query string) string {
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: query}).String()
-}
-
 func loadSessions(root string, ctx resume.Context) ([]resume.Session, error) {
 	dbPath := filepath.Join(root, summariesDB)
 	if !common.Exists(dbPath) {
 		return nil, nil
 	}
 
-	db, err := sql.Open("sqlite", sqliteURI(dbPath, "mode=ro&_pragma=busy_timeout(2000)"))
+	db, err := sql.Open("sqlite", common.SQLiteURI(dbPath, "mode=ro&_pragma=busy_timeout(2000)"))
 	if err != nil {
 		return nil, err
 	}
