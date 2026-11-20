@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/hmepas/resume/internal/adapters/agy"
 	"github.com/hmepas/resume/internal/adapters/codex"
 	"github.com/hmepas/resume/internal/resume"
 )
@@ -38,6 +39,8 @@ var runOpenCodeSessionDelete = func(sessionID string) error {
 	cmd := exec.Command("opencode", "session", "delete", sessionID)
 	return cmd.Run()
 }
+
+var runAgySessionDelete = agy.DeleteSession
 
 func CanRun(in, out *os.File) bool {
 	return isTerminal(in) && isTerminal(out)
@@ -311,6 +314,15 @@ func (p *Picker) askDelete() {
 		p.status = "delete opencode session? y/N"
 		return
 	}
+	if session.Agent == "agy" {
+		if session.ID == "" {
+			p.status = "cannot delete: agy session id is empty"
+			return
+		}
+		p.confirm = &session
+		p.status = "delete agy session? y/N"
+		return
+	}
 	if session.SourcePath == "" {
 		p.status = "cannot delete: source path is empty"
 		return
@@ -345,6 +357,9 @@ func (p *Picker) deleteConfirmed() {
 func deleteSession(session resume.Session) error {
 	if session.Agent == "opencode" {
 		return runOpenCodeSessionDelete(session.ID)
+	}
+	if session.Agent == "agy" {
+		return runAgySessionDelete(session)
 	}
 	if session.Agent == "codex" {
 		return codex.DeleteSession(session)
@@ -575,6 +590,8 @@ func agentColorCode(agent string) string {
 		return "33"
 	case "prime-agent":
 		return "95"
+	case "agy":
+		return "96"
 	default:
 		return ""
 	}

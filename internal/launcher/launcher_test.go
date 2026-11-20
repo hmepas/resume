@@ -90,3 +90,31 @@ func TestForSessionPrimeAgentRequiresSessionID(t *testing.T) {
 		t.Fatal("ForSession(prime-agent without id) returned nil error")
 	}
 }
+
+func TestForSessionAgyUsesSessionID(t *testing.T) {
+	command, err := ForSession(resume.Session{
+		Agent:   "agy",
+		ID:      "be18d98f-b8ef-47a7-bf0c-dfa76737a2e8",
+		Project: "/Users/hmepas/projects/grappa",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if command.Name != "agy" {
+		t.Fatalf("Name = %q, want agy", command.Name)
+	}
+	if !reflect.DeepEqual(command.Args, []string{"--conversation", "be18d98f-b8ef-47a7-bf0c-dfa76737a2e8"}) {
+		t.Fatalf("Args = %#v", command.Args)
+	}
+	if command.Dir != "/Users/hmepas/projects/grappa" {
+		t.Fatalf("Dir = %q", command.Dir)
+	}
+}
+
+func TestForSessionAgyRequiresSessionID(t *testing.T) {
+	_, err := ForSession(resume.Session{Agent: "agy", Project: "/tmp"})
+	if err == nil {
+		t.Fatal("ForSession(agy without id) returned nil error")
+	}
+}

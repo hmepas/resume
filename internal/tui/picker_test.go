@@ -135,6 +135,14 @@ func TestAgentColorCodeIsStable(t *testing.T) {
 	if agentColorCode("gemini") == agentColorCode("prime-agent") {
 		t.Fatal("gemini and prime-agent share a color")
 	}
+	if agentColorCode("agy") != "96" {
+		t.Fatalf("agy color = %q, want 96", agentColorCode("agy"))
+	}
+	for _, other := range []string{"pi", "gemini", "prime-agent"} {
+		if agentColorCode("agy") == agentColorCode(other) {
+			t.Fatalf("agy and %s share a color", other)
+		}
+	}
 }
 
 func TestEscapePreservesThenClearsSearchThenQuits(t *testing.T) {
@@ -152,5 +160,68 @@ func TestEscapePreservesThenClearsSearchThenQuits(t *testing.T) {
 	}
 	if got := p.handle([]byte{27}); got != "cancel" {
 		t.Fatalf("third escape = %q", got)
+	}
+}
+
+func TestAgySessionCanBeDeleted(t *testing.T) {
+	session := resume.Session{Agent: "agy", ID: "conv_123", SourcePath: "/tmp/conv_123.pb"}
+	p := &Picker{
+		sessions: []resume.Session{session},
+		filtered: []resume.Session{session},
+	}
+
+	p.askDelete()
+	if p.confirm == nil {
+		t.Fatal("askDelete did not open confirmation for agy session")
+	}
+	if *p.confirm != session {
+		t.Fatalf("confirm = %#v, want %#v", *p.confirm, session)
+	}
+	if p.status != "delete agy session? y/N" {
+		t.Fatalf("status = %q", p.status)
+	}
+
+	empty := resume.Session{Agent: "agy", SourcePath: "/tmp/conv.pb"}
+	p = &Picker{
+		sessions: []resume.Session{empty},
+		filtered: []resume.Session{empty},
+	}
+	p.askDelete()
+	if p.confirm != nil {
+		t.Fatal("askDelete opened confirmation for agy session without id")
+	}
+	if p.status != "cannot delete: agy session id is empty" {
+		t.Fatalf("status = %q", p.status)
+	}
+}
+
+func TestAgyDeleteUsesSessionID(t *testing.T) {
+	var called resume.Session
+	calls := 0
+	original := runAgySessionDelete
+	runAgySessionDelete = func(session resume.Session) error {
+		called = session
+		calls++
+		return nil
+	}
+	defer func() { runAgySessionDelete = original }()
+
+	deleted := resume.Session{Agent: "agy", ID: "conv_123", SourcePath: "/tmp/conv_123.pb"}
+	kept := resume.Session{Agent: "agy", ID: "conv_456", SourcePath: "/tmp/conv_456.pb"}
+	p := &Picker{
+		sessions: []resume.Session{deleted, kept},
+		filtered: []resume.Session{deleted, kept},
+		confirm:  &deleted,
+	}
+
+	p.deleteConfirmed()
+	if calls != 1 || called != deleted {
+		t.Fatalf("delete called %d times with %#v, want once with %#v", calls, called, deleted)
+	}
+	if len(p.sessions) != 1 || p.sessions[0] != kept {
+		t.Fatalf("sessions after delete = %#v, want only %#v", p.sessions, kept)
+	}
+	if p.status != "deleted agy session" {
+		t.Fatalf("status = %q", p.status)
 	}
 }

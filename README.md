@@ -11,7 +11,7 @@ resume
 
 It answers the boring question that keeps stealing time:
 
-> Was this project last touched in Claude Code, Codex, Cursor, Gemini, Prime Agent, Pi, or something else?
+> Was this project last touched in Claude Code, Codex, Cursor, Gemini, Antigravity (`agy`), Prime Agent, Pi, or something else?
 
 ## Features
 
@@ -157,6 +157,7 @@ Current adapters:
 
 | Agent | Discovery | Launch |
 | --- | --- | --- |
+| Antigravity CLI | `~/.gemini/antigravity-cli` | `agy --conversation <id>` |
 | Claude Code | `~/.claude/projects`, `~/.claude/sessions` | `claude --resume <id>` |
 | Codex | `~/.codex/sessions`, `~/.codex/archived_sessions` | `codex resume <id>` |
 | Cursor | workspace storage | `cursor <project>` |
@@ -165,7 +166,7 @@ Current adapters:
 | Pi | known Pi session locations | `pi --session <id>` |
 | Prime Agent | `~/.prime/agent/sessions` or configured `sessionDir` | `prime-agent --resume <id>` |
 
-Adapter quality varies because each agent stores local history differently. Claude Code, Codex, and Prime Agent have the richest session metadata today; Cursor, Gemini, OpenCode, and Pi are progressively improving.
+Adapter quality varies because each agent stores local history differently. Antigravity CLI, Claude Code, Codex, and Prime Agent have the richest session metadata today; Cursor, Gemini, OpenCode, and Pi are progressively improving.
 
 ## Privacy
 

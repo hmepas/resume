@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"github.com/hmepas/resume/internal/adapters/agy"
 	"github.com/hmepas/resume/internal/adapters/claude"
 	"github.com/hmepas/resume/internal/adapters/codex"
 	"github.com/hmepas/resume/internal/adapters/cursor"
@@ -20,5 +21,6 @@ func Builtin() []resume.Adapter {
 		opencode.Adapter{},
 		pi.Adapter{},
 		primeagent.Adapter{},
+		agy.Adapter{},
 	}
 }

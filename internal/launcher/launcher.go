@@ -30,6 +30,8 @@ func ForSession(session resume.Session) (Command, error) {
 		return resumeCommand(session, "-s")
 	case "pi":
 		return resumeCommand(session, "--session")
+	case "agy":
+		return resumeCommand(session, "--conversation")
 	default:
 		return Command{}, fmt.Errorf("no launcher for agent %q", session.Agent)
 	}
