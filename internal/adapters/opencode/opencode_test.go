@@ -36,9 +36,6 @@ func TestParseSessionFile(t *testing.T) {
 	if session.Project != "/repo" {
 		t.Fatalf("Project = %q, want /repo", session.Project)
 	}
-	if session.ResumeHint != "opencode -s ses_123" {
-		t.Fatalf("ResumeHint = %q, want opencode -s ses_123", session.ResumeHint)
-	}
 }
 
 func TestParseSessionFileUsesProjectWorktree(t *testing.T) {

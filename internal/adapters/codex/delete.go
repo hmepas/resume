@@ -16,9 +16,11 @@ func isGuardian(obj map[string]any) bool {
 		common.String(obj, "payload", "source", "subagent", "other") == "guardian"
 }
 
-// DeleteSession removes guardian journals first, keeping the parent available
+func (Adapter) DeleteScope() string { return "session and its guardian reviews" }
+
+// Delete removes guardian journals first, keeping the parent available
 // for a retry if deleting a review fails. Ordinary subagent journals are retained.
-func DeleteSession(session resume.Session) error {
+func (Adapter) Delete(session resume.Session) error {
 	root, err := common.HomePath(".codex")
 	if err != nil {
 		return err

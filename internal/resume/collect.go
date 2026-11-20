@@ -35,6 +35,11 @@ func Collect(ctx context.Context, adapters []Adapter, opts CollectOptions) ([]Se
 				errs[i] = &Diagnostic{Agent: adapter.ID(), Error: err.Error()}
 				return
 			}
+			for j := range sessions {
+				if command, err := adapter.Command(sessions[j]); err == nil {
+					sessions[j].ResumeHint = command.String()
+				}
+			}
 			found[i] = sessions
 		}(i, adapter)
 	}

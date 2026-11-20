@@ -13,9 +13,15 @@ import (
 	"github.com/hmepas/resume/internal/resume"
 )
 
-type Adapter struct{}
+type Adapter struct{ common.FileDeleter }
 
 func (Adapter) ID() string { return "claude" }
+
+func (Adapter) Color() resume.Color { return resume.ColorRed }
+
+func (Adapter) Command(session resume.Session) (resume.Command, error) {
+	return common.ResumeCommand(session, "--resume")
+}
 
 func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 	root, err := common.HomePath(".claude", "projects")
@@ -237,7 +243,6 @@ func scanSession(path string, activeNames map[string]string, bounded bool) resum
 		UpdatedAt:  updatedAt,
 		Title:      title,
 		SourcePath: path,
-		ResumeHint: "claude --resume " + sessionID,
 		Confidence: "high",
 	}
 }

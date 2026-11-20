@@ -290,7 +290,15 @@ The core stays agent-agnostic:
 ```go
 type Adapter interface {
     ID() string
+    Color() resume.Color // picker color, unique per adapter
     Sessions(ctx resume.Context) ([]resume.Session, error)
+    Command(session resume.Session) (resume.Command, error)
+}
+
+// Optional: adapters whose sessions can be deleted.
+type Deleter interface {
+    DeleteScope() string // e.g. "session file", shown in the confirmation prompt
+    Delete(session resume.Session) error
 }
 ```
 
@@ -308,12 +316,15 @@ resume_hint
 confidence
 ```
 
+`resume_hint` is not set by adapters; it is derived from `Command`.
+
 Adding a new agent should usually mean:
 
 1. Add `internal/adapters/<agent>`.
-2. Implement `Sessions`.
-3. Register it in `internal/adapters/builtin.go`.
-4. Add focused parser tests with local fixtures or synthetic JSON.
+2. Implement `ID`, `Color`, `Sessions` and `Command`. For the usual `<agent> <flag> <id>` form, use `common.ResumeCommand`.
+3. Optionally implement `resume.Deleter`; embed `common.FileDeleter` when there is one file per session.
+4. Register it in `internal/adapters/builtin.go` and add a row to the contract table in `internal/adapters/builtin_test.go`.
+5. Add focused parser tests with local fixtures or synthetic JSON.
 
 No external runtime plugin system exists yet. That is intentional: local agent storage formats are still changing quickly, and built-in adapters are easier to test and ship safely.
 

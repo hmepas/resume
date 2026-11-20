@@ -14,7 +14,6 @@ import (
 
 	"github.com/hmepas/resume/internal/adapters/common"
 	"github.com/hmepas/resume/internal/resume"
-	_ "modernc.org/sqlite"
 )
 
 const (
@@ -25,6 +24,12 @@ const (
 type Adapter struct{}
 
 func (Adapter) ID() string { return "agy" }
+
+func (Adapter) Color() resume.Color { return resume.ColorBrightCyan }
+
+func (Adapter) Command(session resume.Session) (resume.Command, error) {
+	return common.ResumeCommand(session, "--conversation")
+}
 
 func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 	root, err := dataRoot()
@@ -53,7 +58,7 @@ func loadSessions(root string, ctx resume.Context) ([]resume.Session, error) {
 		return nil, nil
 	}
 
-	db, err := sql.Open("sqlite", common.SQLiteURI(dbPath, "mode=ro&_pragma=busy_timeout(2000)"))
+	db, err := common.OpenSQLiteRO(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +166,6 @@ func buildSession(root, dbPath, id, project, title, preview string, lastModified
 		UpdatedAt:  updatedAt,
 		Title:      sessionTitle,
 		SourcePath: sourcePath,
-		ResumeHint: "agy --conversation " + id,
 		Confidence: "high",
 	}
 }

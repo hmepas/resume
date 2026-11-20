@@ -8,9 +8,15 @@ import (
 	"github.com/hmepas/resume/internal/resume"
 )
 
-type Adapter struct{}
+type Adapter struct{ common.FileDeleter }
 
 func (Adapter) ID() string { return "pi" }
+
+func (Adapter) Color() resume.Color { return resume.ColorCyan }
+
+func (Adapter) Command(session resume.Session) (resume.Command, error) {
+	return common.ResumeCommand(session, "--session")
+}
 
 func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 	roots := [][]string{
@@ -80,7 +86,6 @@ func parseLoose(path string) resume.Session {
 	session.Agent = "pi"
 	session.ID = sessionIDFromPath(path)
 	session.SourcePath = path
-	session.ResumeHint = "pi --session " + session.ID
 	session.Confidence = "low"
 	return session
 }

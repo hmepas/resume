@@ -4,12 +4,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/hmepas/resume/internal/adapters/agy"
-	"github.com/hmepas/resume/internal/adapters/codex"
 	"github.com/hmepas/resume/internal/resume"
 )
 
@@ -19,34 +16,29 @@ type PickResult struct {
 }
 
 type Picker struct {
-	in       *os.File
-	out      *os.File
-	sessions []resume.Session
-	filtered []resume.Session
-	query    string
-	search   bool
-	selected int
-	offset   int
-	width    int
-	height   int
-	topLine  int
-	status   string
-	confirm  *resume.Session
-	content  *contentSearcher
+	in         *os.File
+	out        *os.File
+	sessions   []resume.Session
+	filtered   []resume.Session
+	query      string
+	search     bool
+	selected   int
+	offset     int
+	width      int
+	height     int
+	topLine    int
+	status     string
+	confirm    *resume.Session
+	content    *contentSearcher
+	adapters   resume.Registry
+	agentWidth int
 }
-
-var runOpenCodeSessionDelete = func(sessionID string) error {
-	cmd := exec.Command("opencode", "session", "delete", sessionID)
-	return cmd.Run()
-}
-
-var runAgySessionDelete = agy.DeleteSession
 
 func CanRun(in, out *os.File) bool {
 	return isTerminal(in) && isTerminal(out)
 }
 
-func Pick(in, out *os.File, sessions []resume.Session) (PickResult, error) {
+func Pick(in, out *os.File, sessions []resume.Session, adapters resume.Registry) (PickResult, error) {
 	if len(sessions) == 0 {
 		return PickResult{}, nil
 	}
@@ -58,11 +50,13 @@ func Pick(in, out *os.File, sessions []resume.Session) (PickResult, error) {
 	defer raw.restore()
 
 	p := &Picker{
-		in:       in,
-		out:      out,
-		sessions: sessions,
-		filtered: sessions,
-		content:  newContentSearcher(),
+		in:         in,
+		out:        out,
+		sessions:   sessions,
+		filtered:   sessions,
+		content:    newContentSearcher(),
+		adapters:   adapters,
+		agentWidth: agentWidth(adapters),
 	}
 
 	fmt.Fprint(out, "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h")
@@ -305,39 +299,19 @@ func (p *Picker) askDelete() {
 		return
 	}
 	session := p.filtered[p.selected]
-	if session.Agent == "opencode" {
-		if session.ID == "" {
-			p.status = "cannot delete: OpenCode session id is empty"
-			return
-		}
-		p.confirm = &session
-		p.status = "delete opencode session? y/N"
-		return
-	}
-	if session.Agent == "agy" {
-		if session.ID == "" {
-			p.status = "cannot delete: agy session id is empty"
-			return
-		}
-		p.confirm = &session
-		p.status = "delete agy session? y/N"
-		return
-	}
-	if session.SourcePath == "" {
-		p.status = "cannot delete: source path is empty"
+	deleter, ok := p.adapters[session.Agent].(resume.Deleter)
+	if !ok {
+		p.status = "cannot delete: " + session.Agent + " sessions cannot be deleted"
 		return
 	}
 	p.confirm = &session
-	p.status = fmt.Sprintf("delete %s session file? y/N", session.Agent)
-	if session.Agent == "codex" {
-		p.status = "delete codex session and its guardian reviews? y/N"
-	}
+	p.status = fmt.Sprintf("delete %s %s? y/N", session.Agent, deleter.DeleteScope())
 }
 
 func (p *Picker) deleteConfirmed() {
 	session := *p.confirm
 	p.confirm = nil
-	if err := deleteSession(session); err != nil {
+	if err := p.deleteSession(session); err != nil {
 		p.status = "delete failed: " + err.Error()
 		return
 	}
@@ -354,17 +328,12 @@ func (p *Picker) deleteConfirmed() {
 	p.status = "deleted " + session.Agent + " session"
 }
 
-func deleteSession(session resume.Session) error {
-	if session.Agent == "opencode" {
-		return runOpenCodeSessionDelete(session.ID)
+func (p *Picker) deleteSession(session resume.Session) error {
+	deleter, ok := p.adapters[session.Agent].(resume.Deleter)
+	if !ok {
+		return fmt.Errorf("%s sessions cannot be deleted", session.Agent)
 	}
-	if session.Agent == "agy" {
-		return runAgySessionDelete(session)
-	}
-	if session.Agent == "codex" {
-		return codex.DeleteSession(session)
-	}
-	return os.Remove(session.SourcePath)
+	return deleter.Delete(session)
 }
 
 func removeSession(sessions []resume.Session, deleted resume.Session) []resume.Session {
@@ -448,8 +417,14 @@ func (p *Picker) queryText() string {
 	return "/ " + p.query
 }
 
-// agentColWidth fits the longest builtin agent id ("prime-agent").
-const agentColWidth = 11
+// agentWidth fits the longest registered agent id.
+func agentWidth(adapters resume.Registry) int {
+	width := 0
+	for id := range adapters {
+		width = max(width, runeWidth(id))
+	}
+	return width
+}
 
 func (p *Picker) renderRow(b *strings.Builder, index int, session resume.Session) {
 	prefix := "  "
@@ -457,9 +432,9 @@ func (p *Picker) renderRow(b *strings.Builder, index int, session resume.Session
 		prefix = "> "
 	}
 	timeCol := session.UpdatedAt.Local().Format("2006-01-02 15:04")
-	agentCol := fmt.Sprintf("%-*s", agentColWidth, truncate(session.Agent, agentColWidth))
+	agentCol := fmt.Sprintf("%-*s", p.agentWidth, truncate(session.Agent, p.agentWidth))
 	idCol := shortID(session.ID)
-	metaWidth := runeWidth(prefix) + 16 + 2 + agentColWidth + 2 + runeWidth(idCol) + 2
+	metaWidth := runeWidth(prefix) + 16 + 2 + p.agentWidth + 2 + runeWidth(idCol) + 2
 	titleWidth := p.width - metaWidth
 	if titleWidth < 0 {
 		titleWidth = 0
@@ -470,7 +445,7 @@ func (p *Picker) renderRow(b *strings.Builder, index int, session resume.Session
 		fmt.Fprintf(b, "%s%s  %s  %-8s  %s",
 			prefix,
 			timeCol,
-			colorAgent(agentCol, session.Agent, true),
+			colorAgent(agentCol, p.agentColorCode(session.Agent), true),
 			idCol,
 			title,
 		)
@@ -479,7 +454,7 @@ func (p *Picker) renderRow(b *strings.Builder, index int, session resume.Session
 		fmt.Fprintf(b, "%s%s  %s  %-8s  %s",
 			prefix,
 			timeCol,
-			colorAgent(agentCol, session.Agent, false),
+			colorAgent(agentCol, p.agentColorCode(session.Agent), false),
 			idCol,
 			title,
 		)
@@ -563,8 +538,7 @@ func bold(s string) string {
 	return "\x1b[1m" + s + "\x1b[0m"
 }
 
-func colorAgent(text, agent string, selected bool) string {
-	code := agentColorCode(agent)
+func colorAgent(text, code string, selected bool) string {
 	if code == "" {
 		return text
 	}
@@ -574,27 +548,14 @@ func colorAgent(text, agent string, selected bool) string {
 	return "\x1b[" + code + "m" + text + "\x1b[0m"
 }
 
-func agentColorCode(agent string) string {
-	switch strings.ToLower(agent) {
-	case "claude":
-		return "31"
-	case "codex":
-		return "32"
-	case "cursor":
-		return "34"
-	case "gemini":
-		return "35"
-	case "pi":
-		return "36"
-	case "opencode":
-		return "33"
-	case "prime-agent":
-		return "95"
-	case "agy":
-		return "96"
-	default:
+// agentColorCode returns the SGR color code of the agent's adapter, or "" for
+// an unknown agent.
+func (p *Picker) agentColorCode(agent string) string {
+	adapter, ok := p.adapters[agent]
+	if !ok {
 		return ""
 	}
+	return string(adapter.Color())
 }
 
 func clamp(value, low, high int) int {

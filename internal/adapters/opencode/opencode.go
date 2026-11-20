@@ -11,12 +11,17 @@ import (
 
 	"github.com/hmepas/resume/internal/adapters/common"
 	"github.com/hmepas/resume/internal/resume"
-	_ "modernc.org/sqlite"
 )
 
 type Adapter struct{}
 
 func (Adapter) ID() string { return "opencode" }
+
+func (Adapter) Color() resume.Color { return resume.ColorYellow }
+
+func (Adapter) Command(session resume.Session) (resume.Command, error) {
+	return common.ResumeCommand(session, "-s")
+}
 
 func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 	root, err := common.HomePath(".local", "share", "opencode")
@@ -63,7 +68,7 @@ func dbSessions(path string) ([]resume.Session, error) {
 	if !common.Exists(path) {
 		return nil, os.ErrNotExist
 	}
-	db, err := sql.Open("sqlite", common.SQLiteURI(path, "mode=ro&_pragma=busy_timeout(2000)"))
+	db, err := common.OpenSQLiteRO(path)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +194,6 @@ func newSession(id, project, title string, startedAt, updatedAt time.Time, sourc
 		UpdatedAt:  updatedAt,
 		Title:      title,
 		SourcePath: sourcePath,
-		ResumeHint: "opencode -s " + id,
 		Confidence: confidence,
 	}
 }

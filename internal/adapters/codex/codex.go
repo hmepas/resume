@@ -14,6 +14,12 @@ type Adapter struct{}
 
 func (Adapter) ID() string { return "codex" }
 
+func (Adapter) Color() resume.Color { return resume.ColorGreen }
+
+func (Adapter) Command(session resume.Session) (resume.Command, error) {
+	return common.ResumeCommand(session, "resume")
+}
+
 func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 	root, err := common.HomePath(".codex")
 	if err != nil {
@@ -139,7 +145,6 @@ func scanSession(path string, names map[string]string, bounded bool) resume.Sess
 		UpdatedAt:  updatedAt,
 		Title:      title,
 		SourcePath: path,
-		ResumeHint: "codex resume " + id,
 		Confidence: "high",
 	}
 }

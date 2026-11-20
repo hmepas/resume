@@ -11,12 +11,15 @@ import (
 
 	"github.com/hmepas/resume/internal/adapters/common"
 	"github.com/hmepas/resume/internal/resume"
+	_ "modernc.org/sqlite"
 )
 
-// DeleteSession removes an Antigravity conversation and all of its subagent
+func (Adapter) DeleteScope() string { return "session" }
+
+// Delete removes an Antigravity conversation and all of its subagent
 // descendants: the local artifacts first, then the summary rows. It refuses a
 // conversation that is open in a running agy.
-func DeleteSession(session resume.Session) error {
+func (Adapter) Delete(session resume.Session) error {
 	root, err := dataRoot()
 	if err != nil {
 		return err

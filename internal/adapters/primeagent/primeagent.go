@@ -20,9 +20,15 @@ const (
 	boundedTail   = 64 * 1024
 )
 
-type Adapter struct{}
+type Adapter struct{ common.FileDeleter }
 
 func (Adapter) ID() string { return "prime-agent" }
+
+func (Adapter) Color() resume.Color { return resume.ColorBrightMagenta }
+
+func (Adapter) Command(session resume.Session) (resume.Command, error) {
+	return common.ResumeCommand(session, "--resume")
+}
 
 func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 	root, err := sessionRoot(ctx)
@@ -203,7 +209,6 @@ func buildSession(path string, header sessionHeader) resume.Session {
 		UpdatedAt:  updatedAt,
 		Title:      title,
 		SourcePath: path,
-		ResumeHint: "prime-agent --resume " + header.ID,
 		Confidence: "high",
 	}
 }

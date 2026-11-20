@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/hmepas/resume/internal/resume"
@@ -17,6 +18,7 @@ func TestCtrlDAsksDeleteInSearchMode(t *testing.T) {
 		filtered: []resume.Session{session},
 		search:   true,
 		query:    "cla",
+		adapters: resume.NewRegistry([]resume.Adapter{&fakeDeleter{fakeAdapter: fakeAdapter{id: "claude"}}}),
 	}
 
 	if got := p.handle([]byte{4}); got != "render" {
@@ -49,55 +51,6 @@ func TestDTypesInSearchMode(t *testing.T) {
 	}
 }
 
-func TestOpenCodeDatabaseSessionCanBeDeleted(t *testing.T) {
-	session := resume.Session{Agent: "opencode", ID: "ses_123", SourcePath: "/tmp/opencode.db"}
-	p := &Picker{
-		sessions: []resume.Session{session},
-		filtered: []resume.Session{session},
-	}
-
-	p.askDelete()
-	if p.confirm != nil {
-		if *p.confirm != session {
-			t.Fatalf("confirm = %#v, want %#v", *p.confirm, session)
-		}
-	} else {
-		t.Fatal("askDelete did not open confirmation for opencode database session")
-	}
-	if p.status != "delete opencode session? y/N" {
-		t.Fatalf("status = %q", p.status)
-	}
-}
-
-func TestOpenCodeDeleteUsesSessionID(t *testing.T) {
-	called := ""
-	original := runOpenCodeSessionDelete
-	runOpenCodeSessionDelete = func(sessionID string) error {
-		called = sessionID
-		return nil
-	}
-	defer func() { runOpenCodeSessionDelete = original }()
-
-	deleted := resume.Session{Agent: "opencode", ID: "ses_123", SourcePath: "/tmp/opencode.db"}
-	kept := resume.Session{Agent: "opencode", ID: "ses_456", SourcePath: "/tmp/opencode.db"}
-	p := &Picker{
-		sessions: []resume.Session{deleted, kept},
-		filtered: []resume.Session{deleted, kept},
-		confirm:  &deleted,
-	}
-
-	p.deleteConfirmed()
-	if called != "ses_123" {
-		t.Fatalf("deleted session id = %q, want ses_123", called)
-	}
-	if len(p.sessions) != 1 || p.sessions[0] != kept {
-		t.Fatalf("sessions after delete = %#v, want only %#v", p.sessions, kept)
-	}
-	if p.status != "deleted opencode session" {
-		t.Fatalf("status = %q", p.status)
-	}
-}
-
 func TestCtrlJAndCtrlKMoveSelection(t *testing.T) {
 	sessions := []resume.Session{
 		{Agent: "claude", SourcePath: "/tmp/one.jsonl"},
@@ -122,29 +75,6 @@ func TestCtrlJAndCtrlKMoveSelection(t *testing.T) {
 	}
 }
 
-func TestAgentColorCodeIsStable(t *testing.T) {
-	if agentColorCode("claude") != "31" {
-		t.Fatalf("claude color = %q, want 31", agentColorCode("claude"))
-	}
-	if agentColorCode("codex") != "32" {
-		t.Fatalf("codex color = %q, want 32", agentColorCode("codex"))
-	}
-	if agentColorCode("prime-agent") != "95" {
-		t.Fatalf("prime-agent color = %q, want 95", agentColorCode("prime-agent"))
-	}
-	if agentColorCode("gemini") == agentColorCode("prime-agent") {
-		t.Fatal("gemini and prime-agent share a color")
-	}
-	if agentColorCode("agy") != "96" {
-		t.Fatalf("agy color = %q, want 96", agentColorCode("agy"))
-	}
-	for _, other := range []string{"pi", "gemini", "prime-agent"} {
-		if agentColorCode("agy") == agentColorCode(other) {
-			t.Fatalf("agy and %s share a color", other)
-		}
-	}
-}
-
 func TestEscapePreservesThenClearsSearchThenQuits(t *testing.T) {
 	sessions := []resume.Session{{ID: "one", Title: "match one"}, {ID: "two", Title: "match two"}, {ID: "other", Title: "other"}}
 	p := &Picker{sessions: sessions, filtered: sessions[:2], query: "match", search: true, selected: 1, height: 24}
@@ -163,65 +93,126 @@ func TestEscapePreservesThenClearsSearchThenQuits(t *testing.T) {
 	}
 }
 
-func TestAgySessionCanBeDeleted(t *testing.T) {
-	session := resume.Session{Agent: "agy", ID: "conv_123", SourcePath: "/tmp/conv_123.pb"}
+type fakeAdapter struct {
+	id    string
+	color resume.Color
+}
+
+func (a fakeAdapter) ID() string                                      { return a.id }
+func (a fakeAdapter) Color() resume.Color                             { return a.color }
+func (fakeAdapter) Sessions(resume.Context) ([]resume.Session, error) { return nil, nil }
+func (fakeAdapter) Command(resume.Session) (resume.Command, error) {
+	return resume.Command{}, nil
+}
+
+type fakeDeleter struct {
+	fakeAdapter
+	err     error
+	deleted []resume.Session
+}
+
+func (*fakeDeleter) DeleteScope() string { return "fake scope" }
+
+func (d *fakeDeleter) Delete(session resume.Session) error {
+	d.deleted = append(d.deleted, session)
+	return d.err
+}
+
+func TestAskDeleteOpensConfirmationForDeleter(t *testing.T) {
+	session := resume.Session{Agent: "fake", ID: "abc"}
 	p := &Picker{
 		sessions: []resume.Session{session},
 		filtered: []resume.Session{session},
+		adapters: resume.NewRegistry([]resume.Adapter{&fakeDeleter{fakeAdapter: fakeAdapter{id: "fake"}}}),
 	}
 
 	p.askDelete()
-	if p.confirm == nil {
-		t.Fatal("askDelete did not open confirmation for agy session")
+	if p.confirm == nil || *p.confirm != session {
+		t.Fatalf("confirm = %v, want %#v", p.confirm, session)
 	}
-	if *p.confirm != session {
-		t.Fatalf("confirm = %#v, want %#v", *p.confirm, session)
-	}
-	if p.status != "delete agy session? y/N" {
-		t.Fatalf("status = %q", p.status)
-	}
-
-	empty := resume.Session{Agent: "agy", SourcePath: "/tmp/conv.pb"}
-	p = &Picker{
-		sessions: []resume.Session{empty},
-		filtered: []resume.Session{empty},
-	}
-	p.askDelete()
-	if p.confirm != nil {
-		t.Fatal("askDelete opened confirmation for agy session without id")
-	}
-	if p.status != "cannot delete: agy session id is empty" {
+	if p.status != "delete fake fake scope? y/N" {
 		t.Fatalf("status = %q", p.status)
 	}
 }
 
-func TestAgyDeleteUsesSessionID(t *testing.T) {
-	var called resume.Session
-	calls := 0
-	original := runAgySessionDelete
-	runAgySessionDelete = func(session resume.Session) error {
-		called = session
-		calls++
-		return nil
+func TestAskDeleteRefusesNonDeleter(t *testing.T) {
+	session := resume.Session{Agent: "plain", ID: "abc"}
+	p := &Picker{
+		sessions: []resume.Session{session},
+		filtered: []resume.Session{session},
+		adapters: resume.NewRegistry([]resume.Adapter{fakeAdapter{id: "plain"}}),
 	}
-	defer func() { runAgySessionDelete = original }()
 
-	deleted := resume.Session{Agent: "agy", ID: "conv_123", SourcePath: "/tmp/conv_123.pb"}
-	kept := resume.Session{Agent: "agy", ID: "conv_456", SourcePath: "/tmp/conv_456.pb"}
+	p.askDelete()
+	if p.confirm != nil {
+		t.Fatal("askDelete opened confirmation for non-deleter agent")
+	}
+	if p.status != "cannot delete: plain sessions cannot be deleted" {
+		t.Fatalf("status = %q", p.status)
+	}
+}
+
+func TestDeleteConfirmedDeletesThroughAdapter(t *testing.T) {
+	deleter := &fakeDeleter{fakeAdapter: fakeAdapter{id: "fake"}}
+	deleted := resume.Session{Agent: "fake", ID: "one", SourcePath: "/tmp/one"}
+	kept := resume.Session{Agent: "fake", ID: "two", SourcePath: "/tmp/two"}
 	p := &Picker{
 		sessions: []resume.Session{deleted, kept},
 		filtered: []resume.Session{deleted, kept},
 		confirm:  &deleted,
+		adapters: resume.NewRegistry([]resume.Adapter{deleter}),
 	}
 
 	p.deleteConfirmed()
-	if calls != 1 || called != deleted {
-		t.Fatalf("delete called %d times with %#v, want once with %#v", calls, called, deleted)
+	if len(deleter.deleted) != 1 || deleter.deleted[0] != deleted {
+		t.Fatalf("Delete calls = %#v, want once with %#v", deleter.deleted, deleted)
 	}
 	if len(p.sessions) != 1 || p.sessions[0] != kept {
 		t.Fatalf("sessions after delete = %#v, want only %#v", p.sessions, kept)
 	}
-	if p.status != "deleted agy session" {
+	if p.status != "deleted fake session" {
 		t.Fatalf("status = %q", p.status)
+	}
+}
+
+func TestDeleteConfirmedKeepsSessionOnError(t *testing.T) {
+	deleter := &fakeDeleter{fakeAdapter: fakeAdapter{id: "fake"}, err: errors.New("boom")}
+	session := resume.Session{Agent: "fake", ID: "one", SourcePath: "/tmp/one"}
+	p := &Picker{
+		sessions: []resume.Session{session},
+		filtered: []resume.Session{session},
+		confirm:  &session,
+		adapters: resume.NewRegistry([]resume.Adapter{deleter}),
+	}
+
+	p.deleteConfirmed()
+	if len(p.sessions) != 1 || p.sessions[0] != session {
+		t.Fatalf("sessions after failed delete = %#v, want %#v", p.sessions, session)
+	}
+	if p.status != "delete failed: boom" {
+		t.Fatalf("status = %q", p.status)
+	}
+}
+
+func TestAgentColorCodeComesFromAdapter(t *testing.T) {
+	p := &Picker{adapters: resume.NewRegistry([]resume.Adapter{fakeAdapter{id: "fake", color: resume.ColorCyan}})}
+
+	if got := p.agentColorCode("fake"); got != "36" {
+		t.Fatalf("fake color = %q, want 36", got)
+	}
+	if got := p.agentColorCode("unknown"); got != "" {
+		t.Fatalf("unknown color = %q, want empty", got)
+	}
+}
+
+func TestAgentWidthFitsLongestID(t *testing.T) {
+	adapters := resume.NewRegistry([]resume.Adapter{
+		fakeAdapter{id: "pi"},
+		fakeAdapter{id: "longest-id"},
+		fakeAdapter{id: "medium"},
+	})
+
+	if got := agentWidth(adapters); got != len("longest-id") {
+		t.Fatalf("agentWidth = %d, want %d", got, len("longest-id"))
 	}
 }

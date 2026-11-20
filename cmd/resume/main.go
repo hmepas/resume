@@ -60,7 +60,9 @@ func main() {
 		opts.Limit = 0
 	}
 
-	sessions, diagnostics := resume.Collect(context.Background(), adapters.Builtin(), opts)
+	builtin := adapters.Builtin()
+	registry := resume.NewRegistry(builtin)
+	sessions, diagnostics := resume.Collect(context.Background(), builtin, opts)
 
 	if countOnly {
 		fmt.Println(len(sessions))
@@ -82,19 +84,19 @@ func main() {
 	}
 
 	if !jsonOut && !noTUI && tui.CanRun(os.Stdin, os.Stdout) && len(sessions) > 0 {
-		result, err := tui.Pick(os.Stdin, os.Stdout, sessions)
+		result, err := tui.Pick(os.Stdin, os.Stdout, sessions, registry)
 		if err != nil {
 			fatal(err)
 		}
 		if !result.OK {
 			return
 		}
-		command, err := launcher.ForSession(result.Session)
+		command, err := registry.Command(result.Session)
 		if err != nil {
 			fatal(err)
 		}
 		if printCmd {
-			fmt.Println(launcher.ShellString(command))
+			fmt.Println(command.ShellString())
 			return
 		}
 		if err := launcher.Run(command); err != nil {

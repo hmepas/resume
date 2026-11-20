@@ -143,7 +143,7 @@ func TestLoadSessionsParsesAndFilters(t *testing.T) {
 	if main.Title != "Main title" {
 		t.Errorf("title = %q", main.Title)
 	}
-	if main.Agent != "agy" || main.Confidence != "high" || main.ResumeHint != "agy --conversation main" {
+	if main.Agent != "agy" || main.Confidence != "high" {
 		t.Errorf("unexpected fields %+v", main)
 	}
 	if !main.UpdatedAt.Equal(time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)) {

@@ -38,7 +38,7 @@ func TestGuardianFilteringAndDeletion(t *testing.T) {
 	if len(sessions) != 2 {
 		t.Fatalf("visible sessions: %#v", sessions)
 	}
-	if err := DeleteSession(resume.Session{ID: "root", SourcePath: root}); err != nil {
+	if err := (Adapter{}).Delete(resume.Session{ID: "root", SourcePath: root}); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{root, direct, nested} {

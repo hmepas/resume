@@ -11,9 +11,15 @@ import (
 	"github.com/hmepas/resume/internal/resume"
 )
 
-type Adapter struct{}
+type Adapter struct{ common.FileDeleter }
 
 func (Adapter) ID() string { return "cursor" }
+
+func (Adapter) Color() resume.Color { return resume.ColorBlue }
+
+func (Adapter) Command(session resume.Session) (resume.Command, error) {
+	return resume.Command{Name: "cursor", Args: []string{session.Project}, Dir: session.Project}, nil
+}
 
 func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 	root, err := storageRoot()
@@ -40,7 +46,6 @@ func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 			UpdatedAt:  common.FileModTime(filepath.Dir(path)),
 			Title:      "Cursor workspace",
 			SourcePath: path,
-			ResumeHint: "cursor " + project,
 			Confidence: "low",
 		})
 	})

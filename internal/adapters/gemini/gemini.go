@@ -11,9 +11,15 @@ import (
 	"github.com/hmepas/resume/internal/resume"
 )
 
-type Adapter struct{}
+type Adapter struct{ common.FileDeleter }
 
 func (Adapter) ID() string { return "gemini" }
+
+func (Adapter) Color() resume.Color { return resume.ColorMagenta }
+
+func (Adapter) Command(session resume.Session) (resume.Command, error) {
+	return resume.Command{Name: "gemini", Dir: session.Project}, nil
+}
 
 func (Adapter) Sessions(ctx resume.Context) ([]resume.Session, error) {
 	root, err := common.HomePath(".gemini", "tmp")
@@ -106,7 +112,6 @@ func parseJSONChat(path, project string) resume.Session {
 		UpdatedAt:  updated,
 		Title:      title,
 		SourcePath: path,
-		ResumeHint: "gemini",
 		Confidence: "high",
 	}
 }
@@ -142,7 +147,6 @@ func parseJSONLChat(path, project string) resume.Session {
 		UpdatedAt:  updatedAt,
 		Title:      title,
 		SourcePath: path,
-		ResumeHint: "gemini",
 		Confidence: "medium",
 	}
 }

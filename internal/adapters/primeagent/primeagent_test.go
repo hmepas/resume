@@ -49,9 +49,6 @@ func TestParseSessionUsesPrimeMetadata(t *testing.T) {
 	if session.SourcePath != path {
 		t.Fatalf("SourcePath = %q, want %q", session.SourcePath, path)
 	}
-	if session.ResumeHint != "prime-agent --resume 01a-session" {
-		t.Fatalf("ResumeHint = %q", session.ResumeHint)
-	}
 	if session.Confidence != "high" {
 		t.Fatalf("Confidence = %q, want high", session.Confidence)
 	}
