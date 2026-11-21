@@ -22,7 +22,7 @@ func TestBuiltinContract(t *testing.T) {
 		"opencode":    {"opencode -s id-1", resume.ColorYellow, "session"},
 		"pi":          {"pi --session id-1", resume.ColorCyan, "session file"},
 		"prime-agent": {"prime-agent --resume id-1", resume.ColorBrightMagenta, "session file"},
-		"agy":         {"agy --conversation id-1", resume.ColorBrightCyan, "session"},
+		"agy":         {"agy --conversation id-1", resume.ColorBrightCyan, "session and all subagent conversations"},
 	}
 
 	ids := map[string]bool{}

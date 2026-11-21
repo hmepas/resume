@@ -2,6 +2,7 @@ package agy
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -381,6 +382,10 @@ func TestDeleteSessionRefusesLiveConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer holder.Close()
+	beforeInfo, err := holder.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
@@ -404,8 +409,62 @@ func TestDeleteSessionRefusesLiveConversation(t *testing.T) {
 	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 0 {
 		t.Errorf("summaries rows = %d, want 0", n)
 	}
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Error("presence lock not removed")
+	// The lockfile stays in place on the same inode so lockers never split
+	// across an unlinked file, and its lock is released after deletion.
+	afterInfo, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("presence lock removed or unreadable: %v", err)
+	}
+	if !os.SameFile(beforeInfo, afterInfo) {
+		t.Error("presence lock inode changed during deletion")
+	}
+	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Errorf("presence lock still held after delete: %v", err)
+	}
+}
+
+func TestDeleteSessionLocksMissingPresenceThroughCommit(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "data")
+	createDB(t, root, false, []row{
+		{id: "target", steps: 2, modified: "2026-11-20T10:00:00Z", uris: `["file:///tmp/repo"]`},
+	})
+	writeFile(t, transcriptPath(root, "target"), "{}\n")
+
+	lockPath := filepath.Join(root, "presence", "target.lock")
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("presence lock unexpectedly existed before delete: %v", err)
+	}
+
+	origCommit := commitTx
+	t.Cleanup(func() { commitTx = origCommit })
+	checked := false
+	commitTx = func(tx *sql.Tx) error {
+		checked = true
+		probe, err := os.OpenFile(lockPath, os.O_RDWR, 0)
+		if err != nil {
+			t.Errorf("presence lock missing during commit: %v", err)
+			return origCommit(tx)
+		}
+		defer probe.Close()
+		if err := syscall.Flock(int(probe.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); !errors.Is(err, syscall.EWOULDBLOCK) {
+			t.Errorf("concurrent flock during commit = %v, want EWOULDBLOCK", err)
+		}
+		return origCommit(tx)
+	}
+
+	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err != nil {
+		t.Fatal(err)
+	}
+	if !checked {
+		t.Fatal("commitTx was not called")
+	}
+	probe, err := os.OpenFile(lockPath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatalf("presence lock missing after delete: %v", err)
+	}
+	defer probe.Close()
+	if err := syscall.Flock(int(probe.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Errorf("presence lock still held after delete: %v", err)
 	}
 }
 
@@ -417,6 +476,8 @@ func TestDeleteSessionKeepsRowsWhenFilesFail(t *testing.T) {
 	dbPath := createDB(t, root, false, []row{
 		{id: "target", steps: 2, modified: "2026-11-20T10:00:00Z", uris: `["file:///tmp/repo"]`},
 	})
+	convDB := filepath.Join(root, "conversations", "target.db")
+	writeFile(t, convDB, "conv-data")
 	writeFile(t, transcriptPath(root, "target"), "{}\n")
 	logs := filepath.Dir(transcriptPath(root, "target"))
 	if err := os.Chmod(logs, 0o500); err != nil {
@@ -427,9 +488,15 @@ func TestDeleteSessionKeepsRowsWhenFilesFail(t *testing.T) {
 	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err == nil {
 		t.Fatal("delete succeeded although the transcript could not be removed")
 	}
-	// The row stays so the session is still listed and the delete can be retried.
+	// The row and already-staged artifacts stay intact so the session can be retried.
 	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 1 {
 		t.Fatalf("summaries rows = %d, want 1", n)
+	}
+	if _, err := os.Stat(convDB); err != nil {
+		t.Fatalf("conversation DB was not restored: %v", err)
+	}
+	if _, err := os.Stat(transcriptPath(root, "target")); err != nil {
+		t.Fatalf("transcript was not preserved: %v", err)
 	}
 
 	if err := os.Chmod(logs, 0o700); err != nil {
@@ -440,6 +507,9 @@ func TestDeleteSessionKeepsRowsWhenFilesFail(t *testing.T) {
 	}
 	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 0 {
 		t.Errorf("summaries rows after retry = %d, want 0", n)
+	}
+	if _, err := os.Stat(convDB); !os.IsNotExist(err) {
+		t.Error("conversation DB still exists after retry")
 	}
 }
 
@@ -502,7 +572,14 @@ func TestDeleteSessionRowDeletesAreAtomic(t *testing.T) {
 	dbPath := createDB(t, root, false, []row{
 		{id: "target", steps: 2, modified: "2026-11-20T10:00:00Z", uris: `["file:///tmp/repo"]`},
 	})
-	// Schema drift in a side table must fail the delete, not be swallowed.
+	convDB := filepath.Join(root, "conversations", "target.db")
+	ann := filepath.Join(root, "annotations", "target.pbtxt")
+	transcript := transcriptPath(root, "target")
+	writeFile(t, convDB, "conv-data")
+	writeFile(t, ann, "ann-data")
+	writeFile(t, transcript, "{}\n")
+
+	// Schema drift in a side table must fail the delete before touching files.
 	execDB(t, dbPath, `DROP TABLE conversation_parents`, `CREATE TABLE conversation_parents (conversation_id TEXT)`)
 
 	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err == nil {
@@ -513,5 +590,237 @@ func TestDeleteSessionRowDeletesAreAtomic(t *testing.T) {
 	}
 	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversations_fts`); n != 1 {
 		t.Errorf("fts rows = %d, want 1 (rolled back)", n)
+	}
+	for _, p := range []string{convDB, ann, transcript} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("artifact %s was removed despite SQL failure: %v", p, err)
+		}
+	}
+}
+
+func TestDeleteSessionRejectsDirectoryAtFilePath(t *testing.T) {
+	for _, rel := range []string{
+		filepath.Join("conversations", "target.db", "keep.txt"),
+		filepath.Join("annotations", "target.pbtxt", "keep.txt"),
+	} {
+		t.Run(rel, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "data")
+			dbPath := createDB(t, root, false, []row{
+				{id: "target", steps: 2, modified: "2026-11-20T10:00:00Z", uris: `["file:///tmp/repo"]`},
+			})
+			nested := filepath.Join(root, rel)
+			transcript := transcriptPath(root, "target")
+			writeFile(t, nested, "do-not-delete")
+			writeFile(t, transcript, "{}\n")
+
+			if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err == nil {
+				t.Fatalf("delete succeeded although %s is a directory", filepath.Dir(nested))
+			}
+			if _, err := os.Stat(nested); err != nil {
+				t.Errorf("nested file %s removed: %v", nested, err)
+			}
+			if _, err := os.Stat(transcript); err != nil {
+				t.Errorf("transcript removed despite file-path directory error: %v", err)
+			}
+			if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 1 {
+				t.Errorf("summaries rows = %d, want 1", n)
+			}
+		})
+	}
+}
+
+func TestDeleteSessionFailsOnUnstatableDB(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "data")
+	convDB := filepath.Join(root, "conversations", "target.db")
+	transcript := transcriptPath(root, "target")
+	writeFile(t, convDB, "conv-data")
+	writeFile(t, transcript, "{}\n")
+
+	// A symlink loop produces ELOOP (non-ErrNotExist) from os.Stat for all users.
+	dbPath := filepath.Join(root, summariesDB)
+	if err := os.Symlink(dbPath, dbPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err == nil {
+		t.Fatal("delete succeeded although summaries DB could not be stat'd")
+	}
+	for _, p := range []string{convDB, transcript} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("artifact %s removed despite DB stat error: %v", p, err)
+		}
+	}
+}
+
+func TestDeleteSessionRejectsNonSearchableBrainDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	root := filepath.Join(t.TempDir(), "data")
+	dbPath := createDB(t, root, false, []row{
+		{id: "target", steps: 2, modified: "2026-11-20T10:00:00Z", uris: `["file:///tmp/repo"]`},
+	})
+	convDB := filepath.Join(root, "conversations", "target.db")
+	writeFile(t, convDB, "conv-data")
+	writeFile(t, transcriptPath(root, "target"), "{}\n")
+	logs := filepath.Dir(transcriptPath(root, "target"))
+	// Mode 0600 is readable and writable, but lacks search/execute (X_OK),
+	// which prevents unlinking regular-file entries inside it.
+	if err := os.Chmod(logs, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(logs, 0o700) })
+
+	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err == nil {
+		t.Fatal("delete succeeded although brain subdir lacked search permission")
+	}
+	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 1 {
+		t.Fatalf("summaries rows = %d, want 1 (uncommitted)", n)
+	}
+	if _, err := os.Stat(convDB); err != nil {
+		t.Fatalf("conversation DB was not preserved: %v", err)
+	}
+
+	if err := os.Chmod(logs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 0 {
+		t.Errorf("summaries rows after retry = %d, want 0", n)
+	}
+}
+
+func TestDeleteSessionAllowsReadOnlyPresenceLockfile(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "data")
+	dbPath := createDB(t, root, false, []row{
+		{id: "ro", steps: 2, modified: "2026-11-20T10:00:00Z", uris: `["file:///tmp/repo"]`},
+	})
+	lockPath := filepath.Join(root, "presence", "ro.lock")
+	writeFile(t, lockPath, "")
+	if err := os.Chmod(lockPath, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockPath, 0o600) })
+
+	if err := deleteSessionInRoot(root, resume.Session{ID: "ro"}); err != nil {
+		t.Fatalf("delete with 0444 lockfile failed: %v", err)
+	}
+	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 0 {
+		t.Errorf("summaries rows = %d, want 0", n)
+	}
+}
+
+func TestDeleteSessionExclusiveLockBlocksBeforeTouchingFiles(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "data")
+	dbPath := createDB(t, root, false, []row{
+		{id: "target", steps: 2, modified: "2026-11-20T10:00:00Z", uris: `["file:///tmp/repo"]`},
+	})
+	convDB := filepath.Join(root, "conversations", "target.db")
+	transcript := transcriptPath(root, "target")
+	writeFile(t, convDB, "conv-data")
+	writeFile(t, transcript, "{}\n")
+
+	// Hold a SHARED read lock in rollback-journal mode.
+	reader, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	rtx, err := reader.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rtx.Rollback()
+	var n int
+	if err := rtx.QueryRow(`SELECT COUNT(*) FROM conversation_summaries`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+
+	origTimeout := sqliteBusyTimeout
+	sqliteBusyTimeout = 50
+	t.Cleanup(func() { sqliteBusyTimeout = origTimeout })
+
+	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err == nil {
+		t.Fatal("delete succeeded while reader held SHARED lock in rollback-journal mode")
+	}
+	for _, p := range []string{convDB, transcript} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("artifact %s removed before EXCLUSIVE lock acquired: %v", p, err)
+		}
+	}
+
+	if err := rtx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err != nil {
+		t.Fatalf("retry after reader released lock failed: %v", err)
+	}
+	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 0 {
+		t.Errorf("summaries rows = %d, want 0", n)
+	}
+}
+
+func TestDeleteSessionRemovesEmptyUnreadableBrainDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	root := filepath.Join(t.TempDir(), "data")
+	dbPath := createDB(t, root, false, []row{
+		{id: "target", steps: 2, modified: "2026-11-20T10:00:00Z", uris: `["file:///tmp/repo"]`},
+	})
+	brainDir := filepath.Join(root, "brain", "target")
+	if err := os.MkdirAll(brainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(brainDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(brainDir, 0o700) })
+
+	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err != nil {
+		t.Fatalf("delete of empty 000 brain dir failed: %v", err)
+	}
+	if _, err := os.Stat(brainDir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("empty 000 brain dir still exists: %v", err)
+	}
+	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 0 {
+		t.Errorf("summaries rows = %d, want 0", n)
+	}
+}
+
+func TestDeleteSessionPreservesParentWhenDescendantFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	root := filepath.Join(t.TempDir(), "data")
+	uris := `["file:///tmp/repo"]`
+	dbPath := createDB(t, root, false, []row{
+		{id: "target", steps: 2, modified: "2026-11-20T10:00:00Z", uris: uris},
+		{id: "kid", steps: 2, modified: "2026-11-20T10:00:00Z", uris: uris, parent: "target", depth: 1},
+	})
+	parentDB := filepath.Join(root, "conversations", "target.db")
+	parentTr := transcriptPath(root, "target")
+	writeFile(t, parentDB, "parent-db")
+	writeFile(t, parentTr, "{}\n")
+	writeFile(t, transcriptPath(root, "kid"), "{}\n")
+
+	kidLogs := filepath.Dir(transcriptPath(root, "kid"))
+	if err := os.Chmod(kidLogs, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(kidLogs, 0o700) })
+
+	if err := deleteSessionInRoot(root, resume.Session{ID: "target"}); err == nil {
+		t.Fatal("delete succeeded although descendant brain dir was unwritable")
+	}
+	for _, p := range []string{parentDB, parentTr} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("parent artifact %s removed despite descendant failure: %v", p, err)
+		}
+	}
+	if n := countRows(t, dbPath, `SELECT COUNT(*) FROM conversation_summaries`); n != 2 {
+		t.Errorf("summaries rows = %d, want 2", n)
 	}
 }
